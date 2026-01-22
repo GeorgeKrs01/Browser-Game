@@ -212,7 +212,7 @@ export function TopBar({ isSidebarHidden, onToggleSidebar }) {
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <Gamepad2 size={20} />
             <Link className="topbar-title" href="/">
-              Inventory Game
+              Inventory Game 2
             </Link>
           </div>
         </div>
