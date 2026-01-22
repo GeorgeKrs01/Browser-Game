@@ -14,7 +14,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #040b2b;
     --foreground: #ededed;
   }
 }
@@ -23,4 +23,1020 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* App shell layout */
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  border-bottom: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+  background: color-mix(in oklab, var(--background) 92%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.topbar-inner {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  gap: 16px;
+  position: relative;
+}
+
+.topbar-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.level-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--foreground) 15%, transparent);
+  border: 2px solid color-mix(in oklab, var(--foreground) 30%, transparent);
+  transition: transform 0.2s ease-out;
+}
+
+.level-indicator.level-up-animation {
+  animation: levelUp 1.2s ease-out;
+}
+
+@keyframes levelUp {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--foreground) 0%, transparent);
+  }
+  50% {
+    transform: scale(1.3) rotate(5deg);
+    box-shadow: 0 0 20px 8px color-mix(in oklab, var(--foreground) 40%, transparent);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--foreground) 0%, transparent);
+  }
+}
+
+.level-number {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--foreground);
+  transition: transform 0.2s ease-out;
+}
+
+.level-indicator.level-up-animation .level-number {
+  animation: levelNumberPop 1.2s ease-out;
+}
+
+@keyframes levelNumberPop {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.icon-button {
+  height: 36px;
+  width: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 1px solid color-mix(in oklab, var(--foreground) 14%, transparent);
+  background: color-mix(in oklab, var(--background) 92%, transparent);
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: color-mix(in oklab, var(--foreground) 10%, transparent);
+}
+
+.icon-button:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--foreground) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.topbar-title {
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--foreground);
+  letter-spacing: -0.02em;
+}
+
+.topbar-nav {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.topbar-link {
+  text-decoration: none;
+  color: color-mix(in oklab, var(--foreground) 78%, transparent);
+  padding: 6px 10px;
+  border-radius: 10px;
+}
+
+.topbar-link:hover {
+  background: color-mix(in oklab, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+}
+
+.topbar-progress {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 16px;
+  border-top: 1px solid color-mix(in oklab, var(--foreground) 8%, transparent);
+  background: color-mix(in oklab, var(--background) 88%, transparent);
+  min-height: 48px;
+}
+
+.progress-bar-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.progress-bar-label {
+  font-size: 12px;
+  color: color-mix(in oklab, var(--foreground) 70%, transparent);
+  white-space: nowrap;
+  min-width: 140px;
+}
+
+.progress-bar-wrapper {
+  flex: 1;
+  height: 8px;
+  background: color-mix(in oklab, var(--foreground) 10%, transparent);
+  border-radius: 4px;
+  overflow: hidden;
+  min-width: 80px;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.progress-bar-fill.capacity-bar {
+  background: linear-gradient(90deg, #22c55e, #16a34a);
+}
+
+.progress-bar-fill.experience-bar {
+  background: linear-gradient(90deg, #fb923c, #f97316, #ef4444);
+}
+
+.progress-bar-text {
+  font-size: 11px;
+  color: color-mix(in oklab, var(--foreground) 65%, transparent);
+  white-space: nowrap;
+  min-width: 60px;
+  text-align: right;
+  font-weight: 500;
+}
+
+.app-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 0;
+}
+
+.app-body.is-collapsed {
+  grid-template-columns: 0 1fr;
+}
+
+.sidebar {
+  border-right: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+  padding: 16px;
+  overflow: hidden;
+  transition:
+    width 180ms ease,
+    padding 180ms ease,
+    border-color 180ms ease;
+}
+
+.sidebar.is-hidden {
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  border-right-color: transparent;
+}
+
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sidebar-heading {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--foreground) 60%, transparent);
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sidebar-link {
+  text-decoration: none;
+  color: color-mix(in oklab, var(--foreground) 78%, transparent);
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+.sidebar-link:hover {
+  background: color-mix(in oklab, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+}
+
+.sidebar-link-highlighted {
+  background: color-mix(in oklab, var(--foreground) 15%, transparent);
+  color: var(--foreground);
+  font-weight: 600;
+  border-left: 3px solid color-mix(in oklab, var(--foreground) 60%, transparent);
+  padding-left: 7px;
+}
+
+.sidebar-link-highlighted:hover {
+  background: color-mix(in oklab, var(--foreground) 20%, transparent);
+}
+
+.app-main {
+  padding: 24px;
+  min-width: 0;
+}
+
+/* Simple page styles */
+.page {
+  max-width: 980px;
+}
+
+.page-title {
+  font-size: 28px;
+  margin: 0 0 8px;
+  letter-spacing: -0.02em;
+}
+
+.page-subtitle {
+  margin: 0 0 18px;
+  color: color-mix(in oklab, var(--foreground) 65%, transparent);
+}
+
+.progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.progress-row {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+  background: color-mix(in oklab, var(--background) 96%, transparent);
+}
+
+/* Variants for custom CSS progress bars */
+.progress-row-thin .progress-bar {
+  height: 4px;
+}
+
+.progress-bar-thin .progress-bar-fill-thin {
+  background: linear-gradient(90deg, #38bdf8, #0ea5e9);
+}
+
+.progress-row-chunky .progress-bar {
+  height: 14px;
+}
+
+.progress-bar-chunky .progress-bar-fill-chunky {
+  background: linear-gradient(90deg, #22c55e, #16a34a);
+}
+
+.progress-row-striped .progress-bar {
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in oklab, var(--foreground) 14%, transparent) 0,
+    color-mix(in oklab, var(--foreground) 14%, transparent) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}
+
+.progress-bar-striped .progress-bar-fill-striped {
+  background: rgba(59, 130, 246, 0.9);
+}
+
+.progress-row-glow .progress-bar {
+  box-shadow: 0 0 0 1px rgba(147, 197, 253, 0.4),
+    0 0 12px rgba(59, 130, 246, 0.7);
+}
+
+.progress-bar-glow .progress-bar-fill-glow {
+  background: linear-gradient(90deg, #4f46e5, #818cf8, #a855f7);
+}
+
+.progress-row-danger .progress-bar {
+  background: color-mix(in oklab, #ef4444 10%, transparent);
+}
+
+.progress-bar-danger .progress-bar-fill-danger {
+  background: linear-gradient(90deg, #fb923c, #f97316, #ef4444);
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.progress-label {
+  font-weight: 500;
+}
+
+.progress-value {
+  color: color-mix(in oklab, var(--foreground) 60%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--foreground) 8%, transparent);
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    #22c55e,
+    #a3e635,
+    #facc15,
+    #fb923c,
+    #f97316
+  );
+  box-shadow: 0 0 0 1px color-mix(in oklab, #000 25%, transparent);
+  transition: width 160ms ease-out;
+}
+
+/* Radix UI progress */
+.radix-progress-root {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--foreground) 8%, transparent);
+  border-radius: 999px;
+  width: 100%;
+  height: 10px;
+}
+
+.radix-progress-indicator {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #22c55e, #3b82f6);
+  transition: transform 160ms ease-out;
+  transform-origin: left center;
+}
+
+.progress-row-radix {
+  border-style: dashed;
+}
+
+/* Circular progress (react-circular-progressbar) */
+.progress-row-circle {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.circle-progress-wrapper {
+  width: 80px;
+  height: 80px;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.circle-progress-text {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: color-mix(in oklab, var(--foreground) 85%, transparent);
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.listings-carousel {
+  margin-top: 18px;
+  overflow: hidden;
+  padding: 8px 0 12px;
+  position: relative;
+}
+
+.listings-carousel::-webkit-scrollbar {
+  display: none;
+}
+
+.listings-carousel {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.listings-row {
+  display: flex;
+  gap: 18px;
+  min-width: max-content;
+  animation: scroll-left 1800s linear infinite;
+}
+
+  .listings-row-fast {
+  animation: scroll-left 1800s linear infinite;
+}
+
+@keyframes scroll-left {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.listing-card {
+  /* Medium is the default and should be the largest size */
+  min-width: 300px;
+  max-width: 380px;
+  min-height: 80px;
+  border-radius: 14px;
+  padding: 22px 20px;
+  margin-block: 6px;
+  border: 1px solid color-mix(in oklab, var(--foreground) 14%, transparent);
+  /* Keep original fills but add overlay below for subtle separation */
+  display: flex;
+  flex-direction: column;
+  transform-origin: center;
+  opacity: 0;
+  transform: translateY(8px) scale(0.98);
+  animation: listing-pop-in 220ms ease-out forwards;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.listing-card:hover:not(.listing-card-removing) {
+  transform: translateY(-4px);
+}
+
+.listing-card-selected {
+  outline: 3px solid rgba(59, 130, 246, 0.8);
+  outline-offset: 2px;
+  box-shadow:
+    0 0 0 1px rgba(59, 130, 246, 0.6),
+    0 0 20px rgba(59, 130, 246, 0.9),
+    0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* CLEAR separation using overlays:
+   - base cards: no overlay, keep status color
+   - selected cards: dark overlay on top of status color */
+.listing-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: transparent;
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+
+.listing-card-selected::after {
+  background: rgba(0, 0, 0, 0.4); /* darker veil */
+  opacity: 1;
+}
+
+.listing-card-removing {
+  opacity: 0 !important;
+  transform: scale(0.8) translateY(-10px);
+  pointer-events: none;
+  transition: opacity 1s ease-out, transform 1s ease-out;
+}
+
+.listing-card-animated {
+  opacity: 0;
+  transform: translateY(10px) scale(0.96);
+  animation: listing-pop-in 500ms ease-out forwards;
+}
+
+@keyframes listing-pop-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.listing-card-new {
+  background: color-mix(in oklab, #22c55e 10%, var(--background) 92%);
+  border-color: color-mix(in oklab, #22c55e 40%, transparent);
+  box-shadow:
+    0 0 0 1px rgba(34, 197, 94, 0.4),
+    0 0 14px rgba(34, 197, 94, 0.65);
+}
+
+.listing-card-used {
+  background: color-mix(in oklab, #60a5fa 10%, var(--background) 92%);
+  border-color: color-mix(in oklab, #60a5fa 40%, transparent);
+  box-shadow:
+    0 0 0 1px rgba(96, 165, 250, 0.4),
+    0 0 14px rgba(59, 130, 246, 0.65);
+}
+
+.listing-card-damaged {
+  background: color-mix(in oklab, #f97316 10%, var(--background) 92%);
+  border-color: color-mix(in oklab, #f97316 40%, transparent);
+  box-shadow:
+    0 0 0 1px rgba(249, 115, 22, 0.45),
+    0 0 14px rgba(248, 150, 61, 0.75);
+}
+
+.listing-card-legendary {
+  background: color-mix(in oklab, #eab308 14%, var(--background) 90%);
+  border-color: color-mix(in oklab, #eab308 40%, transparent);
+  box-shadow:
+    0 0 0 1px rgba(234, 179, 8, 0.45),
+    0 0 18px rgba(250, 204, 21, 0.9);
+}
+
+.listing-card-cursed {
+  background: color-mix(in oklab, #ef4444 14%, var(--background) 90%);
+  border-color: color-mix(in oklab, #ef4444 45%, transparent);
+  box-shadow:
+    0 0 0 1px rgba(239, 68, 68, 0.55),
+    0 0 18px rgba(248, 113, 113, 0.9);
+}
+
+.listing-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.listing-card-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.listing-card-price {
+  font-size: 20px;
+  font-weight: 600;
+  color: color-mix(in oklab, var(--foreground) 80%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.listing-card-description {
+  font-size: 12px;
+  color: color-mix(in oklab, var(--foreground) 65%, transparent);
+  margin-bottom: 6px;
+  flex: 1;
+}
+
+.listing-card-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.listing-status {
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--foreground) 20%, transparent);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.listing-status-new {
+  background: color-mix(in oklab, #22c55e 12%, transparent);
+}
+
+.listing-status-used {
+  background: color-mix(in oklab, #60a5fa 10%, transparent);
+}
+
+.listing-status-damaged {
+  background: color-mix(in oklab, #f97316 10%, transparent);
+}
+
+.listing-status-legendary {
+  background: color-mix(in oklab, #eab308 14%, transparent);
+}
+
+.listing-status-cursed {
+  background: color-mix(in oklab, #ef4444 16%, transparent);
+}
+
+.listing-risk-label {
+  color: color-mix(in oklab, var(--foreground) 70%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.listing-risk-bar {
+  position: relative;
+  height: 5px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--foreground) 10%, transparent);
+}
+
+.listing-risk-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #dc2626, #ef4444, #f87171, #dc2626);
+  transition: width 160ms ease-out;
+}
+
+.listings-display {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+}
+
+.listings-display-title {
+  font-size: 20px;
+  margin: 0 0 16px;
+  letter-spacing: -0.02em;
+}
+
+.listings-display-grid {
+  display: grid;
+  /* Match base market card size (300–380px) */
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+/* Keep inventory/display cards stable (no pop-in) to avoid overlap in grid */
+.listings-display-grid .listing-card {
+  opacity: 1;
+  transform: none;
+  animation: none;
+}
+
+
+/* Listing size controls (sm / md / lg) */
+.listings-size-sm .listing-card {
+  /* Small sits between xs and md */
+  min-width: 210px;
+  max-width: 260px;
+  padding: 16px 14px;
+}
+
+.listings-size-sm .listing-card-title {
+  font-size: 13px;
+}
+
+.listings-size-sm .listing-card-price {
+  font-size: 18px;
+}
+
+.listings-size-sm .listing-card-description {
+  font-size: 11.5px;
+}
+
+.listings-size-sm .listings-row {
+  gap: 14px;
+}
+
+.listings-size-sm .listings-display-grid {
+  /* Match sm card min/max widths */
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 14px;
+}
+
+/* Extra-small / compact mode: hide descriptions and shrink cards */
+.listings-size-xs .listing-card {
+  min-width: 160px;
+  max-width: 210px;
+  padding: 12px 12px;
+}
+
+.listings-size-xs .listing-card-description {
+  display: none;
+}
+
+.listings-size-xs .listing-card-title {
+  font-size: 13px;
+}
+
+.listings-size-xs .listing-card-price {
+  font-size: 18px;
+}
+
+.listings-size-xs .listings-row {
+  gap: 12px;
+}
+
+.listings-size-xs .listings-display-grid {
+  /* Match xs card min/max widths */
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  display: block;
+  text-decoration: none;
+  color: var(--foreground);
+  border: 1px solid color-mix(in oklab, var(--foreground) 14%, transparent);
+  border-radius: 14px;
+  padding: 14px;
+  background: color-mix(in oklab, var(--background) 92%, transparent);
+}
+
+.card:hover {
+  border-color: color-mix(in oklab, var(--foreground) 24%, transparent);
+}
+
+.card-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.card-body {
+  color: color-mix(in oklab, var(--foreground) 70%, transparent);
+}
+
+/* Buttons page */
+.buttons-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+@media (max-width: 640px) {
+  .buttons-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fill-button {
+  position: relative;
+  overflow: hidden;
+  border-radius: 999px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in oklab, var(--foreground) 20%, transparent);
+  background: color-mix(in oklab, var(--background) 90%, transparent);
+  cursor: default;
+}
+
+.fill-button-fill {
+  position: absolute;
+  inset: 0;
+  width: 0%;
+  background: linear-gradient(90deg, #38bdf8, #22c55e);
+  opacity: 0.9;
+  transition: width 120ms linear;
+}
+
+.fill-button-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 14px;
+}
+
+.fill-button-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fill-button-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--foreground) 12%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, #000 35%, transparent);
+}
+
+.fill-button-label {
+  font-weight: 600;
+}
+
+.fill-button-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 10 different visual variants */
+.fill-button.button-ice .fill-button-fill {
+  background: linear-gradient(90deg, #38bdf8, #0ea5e9, #a5f3fc);
+}
+
+.fill-button-icon.icon-ice {
+  background: radial-gradient(circle at 30% 20%, #e0f2fe, #0369a1 65%);
+}
+
+.fill-button.button-fire .fill-button-fill {
+  background: linear-gradient(90deg, #fb7185, #f97316, #facc15);
+}
+
+.fill-button-icon.icon-fire {
+  background: conic-gradient(from 200deg, #f97316, #ef4444, #facc15, #f97316);
+}
+
+.fill-button.button-poison .fill-button-fill {
+  background: linear-gradient(90deg, #22c55e, #16a34a, #4ade80);
+}
+
+.fill-button-icon.icon-poison {
+  background: radial-gradient(circle at 40% 20%, #bbf7d0, #166534 70%);
+}
+
+.fill-button.button-arcane .fill-button-fill {
+  background: linear-gradient(90deg, #6366f1, #a855f7, #e879f9);
+}
+
+.fill-button-icon.icon-arcane {
+  background: conic-gradient(from 160deg, #4f46e5, #a855f7, #38bdf8, #4f46e5);
+}
+
+.fill-button.button-shadow .fill-button-fill {
+  background: radial-gradient(circle at 0% 50%, #22d3ee, #020617 55%);
+}
+
+.fill-button-icon.icon-shadow {
+  background: radial-gradient(circle at 30% 20%, #38bdf8, #020617 70%);
+}
+
+.fill-button.button-holy .fill-button-fill {
+  background: linear-gradient(90deg, #facc15, #fbbf24, #fef9c3);
+}
+
+.fill-button-icon.icon-holy {
+  background: radial-gradient(circle at 30% 20%, #fef9c3, #facc15 70%);
+}
+
+.fill-button.button-nature .fill-button-fill {
+  background: linear-gradient(90deg, #22c55e, #65a30d, #4ade80);
+}
+
+.fill-button-icon.icon-nature {
+  background: radial-gradient(circle at 20% 10%, #bbf7d0, #15803d 70%);
+}
+
+.fill-button.button-stone .fill-button-fill {
+  background: repeating-linear-gradient(
+    135deg,
+    #334155 0,
+    #334155 4px,
+    #0f172a 4px,
+    #0f172a 8px
+  );
+}
+
+.fill-button-icon.icon-stone {
+  background: repeating-linear-gradient(
+    135deg,
+    #64748b 0,
+    #64748b 4px,
+    #1e293b 4px,
+    #1e293b 8px
+  );
+}
+
+.fill-button.button-lightning .fill-button-fill {
+  background: linear-gradient(90deg, #38bdf8, #facc15, #38bdf8);
+}
+
+.fill-button-icon.icon-lightning {
+  background: radial-gradient(circle at 10% 10%, #facc15, #0ea5e9 65%);
+}
+
+.fill-button.button-void .fill-button-fill {
+  background: radial-gradient(circle at 20% 0%, #818cf8, #020617 60%);
+}
+
+.fill-button-icon.icon-void {
+  background: radial-gradient(circle at 50% 20%, #6366f1, #020617 70%);
+}
+
+@media (max-width: 900px) {
+  .app-body {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .page-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .page-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .topbar-center {
+    display: none;
+  }
+
+  .topbar-progress {
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .progress-bar-container {
+    width: 100%;
+  }
+
+  .progress-bar-label {
+    min-width: 120px;
+    font-size: 11px;
+  }
+
+  .progress-bar-text {
+    min-width: 50px;
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar-progress {
+    padding: 6px 8px;
+  }
+
+  .progress-bar-label {
+    min-width: 100px;
+    font-size: 10px;
+  }
+
+  .progress-bar-text {
+    min-width: 45px;
+    font-size: 9px;
+  }
 }
