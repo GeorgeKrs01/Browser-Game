@@ -6,7 +6,7 @@ import { useBalance } from "../../contexts/BalanceContext";
 import { useExperience } from "../../contexts/ExperienceContext";
 import { XP_REWARDS } from "../../constants/xpRewards";
 
-const STATUSES = ["New", "Used", "Damaged", "Legendary", "Cursed"];
+const STATUSES = ["Legendary", "Rare", "Uncommon", "Common", "Damaged"];
 
 /**
  * Calculates the adjusted price based on risk level
@@ -119,7 +119,7 @@ function createListings() {
       description:
         status === "Legendary"
           ? "High value loot with rare bonuses."
-          : status === "Cursed"
+          : status === "Damaged"
             ? "Unstable item with unpredictable effects."
             : "Standard inventory item available on the market.",
       status,
@@ -153,7 +153,7 @@ function createAdditionalListings() {
       description:
         status === "Legendary"
           ? "High value loot with rare bonuses."
-          : status === "Cursed"
+          : status === "Damaged"
             ? "Unstable item with unpredictable effects."
             : "Standard inventory item available on the market.",
       status,
@@ -379,7 +379,7 @@ export default function ListingsPage() {
           description:
             status === "Legendary"
               ? "High value loot with rare bonuses."
-              : status === "Cursed"
+              : status === "Damaged"
                 ? "Unstable item with unpredictable effects."
                 : "Standard inventory item available on the market.",
           status,

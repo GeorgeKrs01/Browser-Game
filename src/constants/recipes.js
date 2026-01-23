@@ -241,12 +241,14 @@ export function calculateSuccessRate(recipe, materials) {
   materials.forEach(material => {
     if (material.status === "Legendary") {
       successRate += recipe.qualityBonus;
-    } else if (material.status === "New") {
-      successRate += recipe.qualityBonus * 0.5; // Half bonus for New items
-    } else if (material.status === "Used") {
-      successRate += recipe.qualityBonus * 0.25; // Quarter bonus for Used items
+    } else if (material.status === "Rare") {
+      successRate += recipe.qualityBonus * 0.75; // 75% bonus for Rare items
+    } else if (material.status === "Uncommon") {
+      successRate += recipe.qualityBonus * 0.5; // Half bonus for Uncommon items
+    } else if (material.status === "Common") {
+      successRate += recipe.qualityBonus * 0.25; // Quarter bonus for Common items
     }
-    // Damaged and Cursed items don't add bonus (or could subtract)
+    // Damaged items don't add bonus (or could subtract)
   });
   
   // Cap success rate at 95% (never 100% to keep some risk)

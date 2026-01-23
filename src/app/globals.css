@@ -589,7 +589,7 @@ body {
   }
 }
 
-.listing-card-new {
+.listing-card-common {
   background: color-mix(in oklab, #22c55e 10%, var(--background) 92%);
   border-color: color-mix(in oklab, #22c55e 40%, transparent);
   box-shadow:
@@ -597,7 +597,7 @@ body {
     0 0 14px rgba(34, 197, 94, 0.65);
 }
 
-.listing-card-used {
+.listing-card-uncommon {
   background: color-mix(in oklab, #60a5fa 10%, var(--background) 92%);
   border-color: color-mix(in oklab, #60a5fa 40%, transparent);
   box-shadow:
@@ -621,12 +621,12 @@ body {
     0 0 18px rgba(250, 204, 21, 0.9);
 }
 
-.listing-card-cursed {
-  background: color-mix(in oklab, #ef4444 14%, var(--background) 90%);
-  border-color: color-mix(in oklab, #ef4444 45%, transparent);
+.listing-card-rare {
+  background: color-mix(in oklab, #a855f7 14%, var(--background) 90%);
+  border-color: color-mix(in oklab, #a855f7 45%, transparent);
   box-shadow:
-    0 0 0 1px rgba(239, 68, 68, 0.55),
-    0 0 18px rgba(248, 113, 113, 0.9);
+    0 0 0 1px rgba(168, 85, 247, 0.55),
+    0 0 18px rgba(192, 132, 252, 0.9);
 }
 
 .listing-card-header {
@@ -673,11 +673,11 @@ body {
   letter-spacing: 0.08em;
 }
 
-.listing-status-new {
+.listing-status-common {
   background: color-mix(in oklab, #22c55e 12%, transparent);
 }
 
-.listing-status-used {
+.listing-status-uncommon {
   background: color-mix(in oklab, #60a5fa 10%, transparent);
 }
 
@@ -689,8 +689,8 @@ body {
   background: color-mix(in oklab, #eab308 14%, transparent);
 }
 
-.listing-status-cursed {
-  background: color-mix(in oklab, #ef4444 16%, transparent);
+.listing-status-rare {
+  background: color-mix(in oklab, #a855f7 16%, transparent);
 }
 
 .listing-risk-label {

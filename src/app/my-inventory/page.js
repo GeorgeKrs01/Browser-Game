@@ -10,6 +10,7 @@ const STORAGE_KEY_INVENTORY_ITEMS = "inventory-items";
 const STORAGE_KEY_DAY = "game-day";
 const STORAGE_KEY_LAST_PRICE_UPDATE_DAY = "last-price-update-day";
 const STORAGE_KEY_CHECKED_ITEMS = "checked-items";
+const STORAGE_KEY_REPAIRED_ITEMS = "repaired-items";
 const STORAGE_KEY_DAY_SPEED = "day-speed";
 const MAX_PRICE_DECREASE_PERCENTAGE = 0.05; // Maximum 5% decrease per day
 const MIN_PRICE_DECREASE_PERCENTAGE = 0.00; // Minimum 0% decrease per day
@@ -82,7 +83,7 @@ function shouldLoseItem(risk) {
 }
 
 export default function MyInventoryPage() {
-  const { addBalance } = useBalance();
+  const { balance, addBalance, deductBalance } = useBalance();
   const { addExperience } = useExperience();
   const [inventoryItems, setInventoryItems] = useState([]);
   const [selectedItemIds, setSelectedItemIds] = useState(new Set());
@@ -92,6 +93,8 @@ export default function MyInventoryPage() {
   const [priceAnimations, setPriceAnimations] = useState(new Map()); // Map of itemId -> 'green' | 'red' | null
   const [checkedItemIds, setCheckedItemIds] = useState(new Set()); // Set of itemIds that have been checked
   const [oldPrices, setOldPrices] = useState(new Map()); // Map of itemId -> oldPriceFormatted (for displaying old price after check)
+  const [insuredItemIds, setInsuredItemIds] = useState(new Set()); // Set of itemIds that have been insured
+  const [repairedItemIds, setRepairedItemIds] = useState(new Set()); // Set of itemIds that have been repaired
   const [daySpeed, setDaySpeed] = useState(DAY_SPEEDS.normal);
 
   // Load inventory items from localStorage after hydration
@@ -133,6 +136,20 @@ export default function MyInventoryPage() {
         const currentItemIds = new Set(loadedItems.map(item => item.id));
         const filteredCheckedIds = checkedIds.filter(id => currentItemIds.has(id));
         setCheckedItemIds(new Set(filteredCheckedIds));
+      } catch (e) {
+        // Invalid data, ignore
+      }
+    }
+
+    // Load repaired items (only for items that exist in current inventory)
+    const savedRepairedItems = localStorage.getItem(STORAGE_KEY_REPAIRED_ITEMS);
+    if (savedRepairedItems) {
+      try {
+        const repairedIds = JSON.parse(savedRepairedItems);
+        // Filter to only include IDs that exist in current inventory
+        const currentItemIds = new Set(loadedItems.map(item => item.id));
+        const filteredRepairedIds = repairedIds.filter(id => currentItemIds.has(id));
+        setRepairedItemIds(new Set(filteredRepairedIds));
       } catch (e) {
         // Invalid data, ignore
       }
@@ -239,6 +256,7 @@ export default function MyInventoryPage() {
         // Clear all checked items if inventory is empty
         setCheckedItemIds(new Set());
         setOldPrices(new Map());
+        setRepairedItemIds(new Set());
       } else {
         // Filter checked items to only include IDs that exist in current inventory
         const currentItemIds = new Set(inventoryItems.map(item => item.id));
@@ -261,6 +279,16 @@ export default function MyInventoryPage() {
           });
           return filtered;
         });
+        // Clean up repaired items that no longer exist
+        setRepairedItemIds((prev) => {
+          const filtered = new Set();
+          prev.forEach((id) => {
+            if (currentItemIds.has(id)) {
+              filtered.add(id);
+            }
+          });
+          return filtered;
+        });
       }
     }
   }, [inventoryItems, isHydrated]);
@@ -271,6 +299,13 @@ export default function MyInventoryPage() {
       localStorage.setItem(STORAGE_KEY_CHECKED_ITEMS, JSON.stringify(Array.from(checkedItemIds)));
     }
   }, [checkedItemIds, isHydrated]);
+
+  // Save repaired items to localStorage whenever it changes (only after hydration)
+  useEffect(() => {
+    if (isHydrated) {
+      localStorage.setItem(STORAGE_KEY_REPAIRED_ITEMS, JSON.stringify(Array.from(repairedItemIds)));
+    }
+  }, [repairedItemIds, isHydrated]);
 
   // Monitor day changes and decrease prices when a new day occurs
   useEffect(() => {
@@ -334,125 +369,190 @@ export default function MyInventoryPage() {
   };
 
   /**
-   * Calculates a potential new price for an item based on market conditions
-   * Formula: Uses risk-adjusted price calculation with a chance to update
-   * @param {number} basePrice - Current price of the item
-   * @param {number} risk - Risk percentage (0-100)
-   * @returns {number|null} - New price if price should change, null if no change
+   * Gets the next status tier for an item
+   * Progression: Damaged -> Common -> Uncommon -> Rare -> Legendary
+   * @param {string} currentStatus - Current status of the item
+   * @returns {string|null} - Next status tier, or null if already at max (Legendary)
    */
-  function calculatePotentialPriceChange(basePrice, risk) {
-    // 60% chance that checking an item will reveal a price change
-    const priceChangeChance = 0.6;
+  function getNextStatus(currentStatus) {
+    const statusProgression = ["Damaged", "Common", "Uncommon", "Rare", "Legendary"];
+    const currentIndex = statusProgression.indexOf(currentStatus);
     
-    if (Math.random() > priceChangeChance) {
-      return null; // No price change
+    if (currentIndex === -1 || currentIndex === statusProgression.length - 1) {
+      return null; // Already at max or invalid status
     }
     
-    // Use the risk-adjusted selling price formula to determine new price
-    // This creates volatility based on the item's risk level
-    const newPrice = calculateRiskAdjustedSellingPrice(basePrice, risk);
-    
-    // Only update if the price actually changed (more than 1% difference)
-    const priceDifference = Math.abs(newPrice - basePrice) / basePrice;
-    if (priceDifference < 0.01) {
-      return null; // Price change too small, don't update
-    }
-    
-    return newPrice;
+    return statusProgression[currentIndex + 1];
   }
 
   const handleCheck = () => {
     if (selectedItemIds.size === 0) {
-      toast.error("Please select items to check.");
+      toast.error("Please select items to repair.");
       return;
     }
     
-    // Filter out items that have already been checked
-    const uncheckedItemIds = Array.from(selectedItemIds).filter(
-      (id) => !checkedItemIds.has(id)
-    );
-    
-    if (uncheckedItemIds.length === 0) {
-      toast.error("All selected items have already been checked.");
-      return;
-    }
-    
-    if (uncheckedItemIds.length < selectedItemIds.size) {
-      toast(`Only checking ${uncheckedItemIds.length} unchecked item(s).`, { duration: 2000 });
-    }
-    
-    // Store selected item IDs before clearing
-    const itemIdsToCheck = uncheckedItemIds;
+    // Get selected items
     const selectedItems = inventoryItems.filter((item) =>
-      itemIdsToCheck.includes(item.id)
+      selectedItemIds.has(item.id)
     );
+    
+    // Filter out Legendary items (cannot be repaired)
+    const legendaryItems = selectedItems.filter(item => item.status === "Legendary");
+    const repairableItems = selectedItems.filter(item => item.status !== "Legendary");
+    
+    // Filter out items that have already been repaired
+    const alreadyRepairedItems = repairableItems.filter(item => repairedItemIds.has(item.id));
+    const unrepairedItems = repairableItems.filter(item => !repairedItemIds.has(item.id));
+    
+    if (legendaryItems.length > 0) {
+      toast.error("Legendary items cannot be repaired.", { duration: 3000 });
+    }
+    
+    if (alreadyRepairedItems.length > 0) {
+      toast.error("Some items have already been repaired and cannot be repaired again.", { duration: 3000 });
+    }
+    
+    if (unrepairedItems.length === 0) {
+      if (legendaryItems.length > 0 || alreadyRepairedItems.length > 0) {
+        setSelectedItemIds(new Set());
+      } else {
+        toast.error("Please select items to repair.");
+      }
+      return;
+    }
     
     // Deselect all items immediately
     setSelectedItemIds(new Set());
     
-    // Calculate price changes for selected items (store for later)
-    const priceChanges = new Map(); // Map of itemId -> { newPrice, newPriceFormatted }
+    // Check which items succeed or fail during repair
+    // Success: random > risk (item is upgraded)
+    // Failure: random <= risk (item is destroyed)
+    const successfulRepairs = [];
+    const failedRepairs = [];
     
-    selectedItems.forEach((item) => {
-      const basePrice = parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
-      const potentialNewPrice = calculatePotentialPriceChange(basePrice, item.risk);
+    unrepairedItems.forEach((item) => {
+      const random = Math.random() * 100; // Random number 0-100
       
-      if (potentialNewPrice !== null) {
-        const newPriceFormatted = potentialNewPrice.toLocaleString("en-US", {
+      if (random > item.risk) {
+        // Repair succeeds - item will be upgraded
+        successfulRepairs.push(item);
+      } else {
+        // Repair fails - item will be destroyed
+        failedRepairs.push(item);
+      }
+    });
+    
+    // Handle failed repairs: remove from inventory and refund if insured
+    if (failedRepairs.length > 0) {
+      let totalRefund = 0;
+      const failedItemIds = failedRepairs.map(item => item.id);
+      
+      failedRepairs.forEach((item) => {
+        if (insuredItemIds.has(item.id)) {
+          // Item is insured, refund the item cost
+          const itemPrice = parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+          totalRefund += itemPrice;
+        }
+      });
+      
+      // Remove failed items from inventory
+      setInventoryItems((prev) =>
+        prev.filter((item) => !failedItemIds.includes(item.id))
+      );
+      
+      // Remove from checked items, insured items, and repaired items if they were there
+      setCheckedItemIds((prev) => {
+        const next = new Set(prev);
+        failedItemIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      setInsuredItemIds((prev) => {
+        const next = new Set(prev);
+        failedItemIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      setRepairedItemIds((prev) => {
+        const next = new Set(prev);
+        failedItemIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      
+      // Refund insured items
+      if (totalRefund > 0) {
+        addBalance(totalRefund);
+        const refundFormatted = totalRefund.toLocaleString("en-US", {
+          style: "currency",
+          currency: "USD",
+          maximumFractionDigits: 0,
+        });
+        toast.error(
+          `💥 ${failedRepairs.length} item(s) destroyed during repair! ${totalRefund > 0 ? `Insurance refunded ${refundFormatted}.` : ""}`,
+          { duration: 5000 }
+        );
+      } else {
+        toast.error(
+          `💥 ${failedRepairs.length} item(s) destroyed during repair!`,
+          { duration: 5000 }
+        );
+      }
+    }
+    
+    // If all repairs failed, stop here
+    if (successfulRepairs.length === 0) {
+      return;
+    }
+    
+    // Store old prices and statuses for successful repairs
+    const oldPricesMap = new Map();
+    const statusUpgrades = new Map(); // Map of itemId -> { newStatus, newPrice, newPriceFormatted }
+    const successfulItemIds = successfulRepairs.map(item => item.id);
+    
+    successfulRepairs.forEach((item) => {
+      const basePrice = parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+      oldPricesMap.set(item.id, basePrice);
+      
+      // Get next status tier
+      const nextStatus = getNextStatus(item.status);
+      if (nextStatus) {
+        // Increase price by 25% on successful repair
+        const newPrice = Math.round(basePrice * 1.25);
+        const newPriceFormatted = newPrice.toLocaleString("en-US", {
           style: "currency",
           currency: "USD",
           maximumFractionDigits: 0,
         });
         
-        priceChanges.set(item.id, {
-          newPrice: potentialNewPrice,
+        statusUpgrades.set(item.id, {
+          newStatus: nextStatus,
+          newPrice: newPrice,
           newPriceFormatted: newPriceFormatted,
+          oldPriceFormatted: item.price, // Store the old formatted price for display
         });
       }
     });
     
-    // Store old prices for comparison and display
-    const oldPricesMap = new Map();
-    selectedItems.forEach((item) => {
-      const basePrice = parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
-      oldPricesMap.set(item.id, basePrice);
-      // Store formatted old price for display
-      setOldPrices((prev) => {
-        const next = new Map(prev);
-        next.set(item.id, item.price); // Store the formatted price string
-        return next;
-      });
-    });
-    
-    // Start checking animation for all selected items
-    const CHECK_DURATION_MS = 1000; // 2 seconds
+    // Start repair animation for successful repairs
+    const REPAIR_DURATION_MS = 1000; // 1 second
     const UPDATE_INTERVAL_MS = 50; // Update every 50ms for smooth animation
-    const progressIncrement = (UPDATE_INTERVAL_MS / CHECK_DURATION_MS) * 100;
-    
-    // Mark items as checked immediately
-    setCheckedItemIds((prev) => {
-      const next = new Set(prev);
-      itemIdsToCheck.forEach((id) => {
-        next.add(id);
-      });
-      return next;
-    });
+    const progressIncrement = (UPDATE_INTERVAL_MS / REPAIR_DURATION_MS) * 100;
 
-    // Award experience for checking items
-    const xpGained = itemIdsToCheck.length * XP_REWARDS.CHECK_ITEM_PRICE;
-    addExperience(xpGained);
+    // Award experience for successful repairs
+    const xpGained = successfulItemIds.length * XP_REWARDS.CHECK_ITEM_PRICE;
+    if (xpGained > 0) {
+      addExperience(xpGained);
+    }
     
-    // Initialize all items at 0% progress
+    // Initialize all successful repairs at 0% progress
     setCheckingItems((prev) => {
       const next = new Map(prev);
-      itemIdsToCheck.forEach((id) => {
+      successfulItemIds.forEach((id) => {
         next.set(id, 0);
       });
       return next;
     });
     
-    // Animate progress for each item
-    itemIdsToCheck.forEach((itemId) => {
+    // Animate progress for each successful repair
+    successfulItemIds.forEach((itemId) => {
       let currentProgress = 0;
       
       const progressInterval = setInterval(() => {
@@ -469,31 +569,50 @@ export default function MyInventoryPage() {
             return next;
           });
           
-          // After a brief delay, apply price changes and remove from checking state
+          // After a brief delay, apply status upgrade and price increase
           setTimeout(() => {
-            // Apply price change if available
-            const priceChange = priceChanges.get(itemId);
+            const upgrade = statusUpgrades.get(itemId);
             const oldPrice = oldPricesMap.get(itemId);
             
-            if (priceChange) {
-              // Compare old and new price to determine animation
-              const isHigher = priceChange.newPrice > oldPrice;
-              const animationType = isHigher ? 'green' : 'red';
+            if (upgrade) {
+              // Store formatted old price for display (only after price is about to change)
+              if (upgrade.oldPriceFormatted) {
+                setOldPrices((prev) => {
+                  const next = new Map(prev);
+                  next.set(itemId, upgrade.oldPriceFormatted);
+                  return next;
+                });
+              }
               
-              // Trigger price animation
-              setPriceAnimations((prev) => {
-                const next = new Map(prev);
-                next.set(itemId, animationType);
+              // Mark as checked (only after price is about to change)
+              setCheckedItemIds((prev) => {
+                const next = new Set(prev);
+                next.add(itemId);
                 return next;
               });
               
-              // Update price
+              // Mark as repaired (item can only be repaired once)
+              setRepairedItemIds((prev) => {
+                const next = new Set(prev);
+                next.add(itemId);
+                return next;
+              });
+              
+              // Trigger green animation for successful upgrade
+              setPriceAnimations((prev) => {
+                const next = new Map(prev);
+                next.set(itemId, 'green');
+                return next;
+              });
+              
+              // Update item status and price
               setInventoryItems((prevItems) => {
                 return prevItems.map((item) => {
                   if (item.id === itemId) {
                     return {
                       ...item,
-                      price: priceChange.newPriceFormatted,
+                      status: upgrade.newStatus,
+                      price: upgrade.newPriceFormatted,
                     };
                   }
                   return item;
@@ -507,23 +626,7 @@ export default function MyInventoryPage() {
                   next.delete(itemId);
                   return next;
                 });
-              }, 2000); // Animation duration - 2 seconds for better visibility
-            } else {
-              // No price change - mark as grey (same price)
-              setPriceAnimations((prev) => {
-                const next = new Map(prev);
-                next.set(itemId, 'grey');
-                return next;
-              });
-              
-              // Remove grey animation after duration
-              setTimeout(() => {
-                setPriceAnimations((prev) => {
-                  const next = new Map(prev);
-                  next.delete(itemId);
-                  return next;
-                });
-              }, 2000);
+              }, 2000); // Animation duration - 2 seconds
             }
             
             // Remove from checking state
@@ -543,6 +646,116 @@ export default function MyInventoryPage() {
         }
       }, UPDATE_INTERVAL_MS);
     });
+    
+    // Show success toast
+    if (successfulRepairs.length > 0) {
+      toast.success(
+        `✨ ${successfulRepairs.length} item(s) successfully repaired and upgraded!`,
+        { duration: 3000 }
+      );
+    }
+  };
+
+  const handleInsure = () => {
+    if (selectedItemIds.size === 0) {
+      toast.error("Please select items to insure.");
+      return;
+    }
+    
+    // Get selected items
+    const selectedItems = inventoryItems.filter((item) =>
+      selectedItemIds.has(item.id)
+    );
+    
+    // Filter out Legendary items (cannot be insured)
+    const legendaryItems = selectedItems.filter(item => item.status === "Legendary");
+    const insurableItems = selectedItems.filter(item => item.status !== "Legendary");
+    
+    if (legendaryItems.length > 0) {
+      toast.error("Legendary items cannot be insured.", { duration: 3000 });
+    }
+    
+    if (insurableItems.length === 0) {
+      if (legendaryItems.length > 0) {
+        setSelectedItemIds(new Set());
+      } else {
+        toast.error("Please select items to insure.");
+      }
+      return;
+    }
+    
+    // Filter out items that have already been insured
+    const uninsuredItemIds = insurableItems
+      .filter((item) => !insuredItemIds.has(item.id))
+      .map((item) => item.id);
+    
+    if (uninsuredItemIds.length === 0) {
+      toast.error("All selected items have already been insured.");
+      return;
+    }
+    
+    if (uninsuredItemIds.length < insurableItems.length) {
+      toast(`Only insuring ${uninsuredItemIds.length} uninsured item(s).`, { duration: 2000 });
+    }
+    
+    // Get the items to insure
+    const itemsToInsure = inventoryItems.filter((item) =>
+      uninsuredItemIds.includes(item.id)
+    );
+    
+    // Calculate total insurance cost (scales with risk: lower risk = lower cost, higher risk = higher cost)
+    // Formula: baseCost (10%) + risk adjustment
+    // Higher risk items cost more to insure (up to 60% at 100% risk)
+    // Lower risk items cost less to insure (down to 10% at 0% risk)
+    const totalCost = itemsToInsure.reduce((sum, item) => {
+      const itemPrice = parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+      // Base cost: 10% of item value
+      // Risk adjustment: add 0.5% per 1% of risk
+      // Range: 10% (0% risk) to 60% (100% risk)
+      const basePercentage = 0.10; // 10% base
+      const riskAdjustment = item.risk * 0.005; // 0.5% per risk point
+      const insurancePercentage = basePercentage + riskAdjustment;
+      const insuranceCost = Math.round(itemPrice * insurancePercentage);
+      return sum + insuranceCost;
+    }, 0);
+    
+    // Check if player has enough balance
+    if (balance < totalCost) {
+      const totalCostFormatted = totalCost.toLocaleString("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 0,
+      });
+      toast.error(`Insufficient balance! Insurance costs ${totalCostFormatted} but you only have ${balance.toLocaleString("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 0,
+      })}.`);
+      return;
+    }
+    
+    // Deduct balance
+    deductBalance(totalCost);
+    
+    // Mark items as insured
+    setInsuredItemIds((prev) => {
+      const next = new Set(prev);
+      uninsuredItemIds.forEach((id) => {
+        next.add(id);
+      });
+      return next;
+    });
+    
+    // Deselect all items
+    setSelectedItemIds(new Set());
+    
+    const totalCostFormatted = totalCost.toLocaleString("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0,
+    });
+    
+    toast.success(`${uninsuredItemIds.length} item(s) insured for ${totalCostFormatted}!`);
   };
 
   const handleResetDays = () => {
@@ -832,35 +1045,127 @@ export default function MyInventoryPage() {
               )}
             </div>
             <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button
-                onClick={handleCheck}
-                disabled={selectedItemIds.size === 0}
-                style={{
-                  padding: "0.5rem 1rem",
-                  backgroundColor:
-                    selectedItemIds.size === 0 ? "#ccc" : "#4a90e2",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor:
-                    selectedItemIds.size === 0 ? "not-allowed" : "pointer",
-                  fontSize: "0.9rem",
-                  fontWeight: "500",
-                  opacity: selectedItemIds.size === 0 ? 0.6 : 1,
-                }}
-                onMouseEnter={(e) => {
-                  if (selectedItemIds.size > 0) {
-                    e.target.style.backgroundColor = "#357abd";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (selectedItemIds.size > 0) {
-                    e.target.style.backgroundColor = "#4a90e2";
-                  }
-                }}
-              >
-                Check
-              </button>
+              {(() => {
+                // Get selected items
+                const selectedItems = inventoryItems.filter((item) =>
+                  selectedItemIds.has(item.id)
+                );
+                
+                // Filter out Legendary items (cannot be insured)
+                const insurableSelectedItems = selectedItems.filter(
+                  (item) => item.status !== "Legendary"
+                );
+                
+                // Check if all insurable selected items have already been insured
+                const uninsuredSelectedItems = insurableSelectedItems
+                  .filter((item) => !insuredItemIds.has(item.id))
+                  .map((item) => item.id);
+                const allSelectedInsured = selectedItemIds.size > 0 && uninsuredSelectedItems.length === 0;
+                const allSelectedLegendary = selectedItemIds.size > 0 && insurableSelectedItems.length === 0;
+                const isInsureButtonDisabled = selectedItemIds.size === 0 || allSelectedInsured || allSelectedLegendary;
+                
+                // Calculate insurance cost for uninsured selected items (scales with risk)
+                let insuranceCost = 0;
+                if (uninsuredSelectedItems.length > 0) {
+                  const itemsToInsure = inventoryItems.filter((item) =>
+                    uninsuredSelectedItems.includes(item.id)
+                  );
+                  insuranceCost = itemsToInsure.reduce((sum, item) => {
+                    const itemPrice = parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+                    // Base cost: 10% of item value
+                    // Risk adjustment: add 0.5% per 1% of risk
+                    // Range: 10% (0% risk) to 60% (100% risk)
+                    const basePercentage = 0.10; // 10% base
+                    const riskAdjustment = item.risk * 0.005; // 0.5% per risk point
+                    const insurancePercentage = basePercentage + riskAdjustment;
+                    const cost = Math.round(itemPrice * insurancePercentage);
+                    return sum + cost;
+                  }, 0);
+                }
+                
+                const costFormatted = insuranceCost > 0 
+                  ? insuranceCost.toLocaleString("en-US", {
+                      style: "currency",
+                      currency: "USD",
+                      maximumFractionDigits: 0,
+                    })
+                  : "";
+                
+                return (
+                  <button
+                    onClick={handleInsure}
+                    disabled={isInsureButtonDisabled}
+                    style={{
+                      padding: "0.5rem 1rem",
+                      backgroundColor: isInsureButtonDisabled ? "#ccc" : "#10b981",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: isInsureButtonDisabled ? "not-allowed" : "pointer",
+                      fontSize: "0.9rem",
+                      fontWeight: "500",
+                      opacity: isInsureButtonDisabled ? 0.6 : 1,
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isInsureButtonDisabled) {
+                        e.target.style.backgroundColor = "#059669";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isInsureButtonDisabled) {
+                        e.target.style.backgroundColor = "#10b981";
+                      }
+                    }}
+                  >
+                    Insure{costFormatted ? ` (${costFormatted})` : ""}
+                  </button>
+                );
+              })()}
+              {(() => {
+                // Check if all selected items are Legendary (cannot be repaired) or already repaired
+                const selectedItems = inventoryItems.filter((item) =>
+                  selectedItemIds.has(item.id)
+                );
+                const repairableSelectedItems = selectedItems.filter(
+                  (item) => item.status !== "Legendary"
+                );
+                const unrepairedSelectedItems = repairableSelectedItems.filter(
+                  (item) => !repairedItemIds.has(item.id)
+                );
+                const allSelectedLegendary = selectedItemIds.size > 0 && repairableSelectedItems.length === 0;
+                const allSelectedRepaired = selectedItemIds.size > 0 && repairableSelectedItems.length > 0 && unrepairedSelectedItems.length === 0;
+                const isButtonDisabled = selectedItemIds.size === 0 || allSelectedLegendary || allSelectedRepaired;
+                
+                return (
+                  <button
+                    onClick={handleCheck}
+                    disabled={isButtonDisabled}
+                    style={{
+                      padding: "0.5rem 1rem",
+                      backgroundColor: isButtonDisabled ? "#ccc" : "#4a90e2",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: isButtonDisabled ? "not-allowed" : "pointer",
+                      fontSize: "0.9rem",
+                      fontWeight: "500",
+                      opacity: isButtonDisabled ? 0.6 : 1,
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isButtonDisabled) {
+                        e.target.style.backgroundColor = "#357abd";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isButtonDisabled) {
+                        e.target.style.backgroundColor = "#4a90e2";
+                      }
+                    }}
+                  >
+                    Repair
+                  </button>
+                );
+              })()}
               <button
                 onClick={handleQuickSale}
                 disabled={selectedItemIds.size === 0}
