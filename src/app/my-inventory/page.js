@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { useBalance } from "../../contexts/BalanceContext";
 import { useExperience } from "../../contexts/ExperienceContext";
 import { XP_REWARDS } from "../../constants/xpRewards";
+import { randomPercent, randomPercentRange, randomChance } from "../../utils/rng";
 
 const STORAGE_KEY_INVENTORY_ITEMS = "inventory-items";
 const STORAGE_KEY_DAY = "game-day";
@@ -39,7 +40,7 @@ const DAY_SPEEDS = {
  */
 function calculateRiskAdjustedSellingPrice(basePrice, risk, floorPricePercentage = null) {
   // Generate random number between 0-100
-  const random = Math.random() * 100;
+  const random = randomPercent();
   
   // Risk determines the chance of getting a discount vs premium
   // Higher risk = higher chance of discount, lower chance of premium
@@ -76,10 +77,8 @@ function calculateRiskAdjustedSellingPrice(basePrice, risk, floorPricePercentage
  * @returns {boolean} - True if the item should be lost
  */
 function shouldLoseItem(risk) {
-  // Generate random number between 0-100
-  const random = Math.random() * 100;
-  // Item is lost if random number is less than risk percentage
-  return random < risk;
+  // Item is lost if random chance is less than risk percentage
+  return randomChance(risk);
 }
 
 export default function MyInventoryPage() {
@@ -330,9 +329,10 @@ export default function MyInventoryPage() {
           
           // Generate a random decrease percentage between 0% and 5% for this item
           // Each item gets a different random percentage each day
-          const randomDecreasePercent = 
-            MIN_PRICE_DECREASE_PERCENTAGE + 
-            Math.random() * (MAX_PRICE_DECREASE_PERCENTAGE - MIN_PRICE_DECREASE_PERCENTAGE);
+          const randomDecreasePercent = randomPercentRange(
+            MIN_PRICE_DECREASE_PERCENTAGE,
+            MAX_PRICE_DECREASE_PERCENTAGE
+          );
           
           const newPrice = Math.max(1, Math.round(currentPrice * (1 - randomDecreasePercent)));
           
@@ -431,9 +431,9 @@ export default function MyInventoryPage() {
     const failedRepairs = [];
     
     unrepairedItems.forEach((item) => {
-      const random = Math.random() * 100; // Random number 0-100
-      
-      if (random > item.risk) {
+      // Repair succeeds if random chance is greater than risk
+      // Repair fails if random chance is less than or equal to risk
+      if (!randomChance(item.risk)) {
         // Repair succeeds - item will be upgraded
         successfulRepairs.push(item);
       } else {

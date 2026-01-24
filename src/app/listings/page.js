@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { useBalance } from "../../contexts/BalanceContext";
 import { useExperience } from "../../contexts/ExperienceContext";
 import { XP_REWARDS } from "../../constants/xpRewards";
+import { randomChance, randomElement, randomInt, randomIntRange } from "../../utils/rng";
 
 const STATUSES = ["Legendary", "Rare", "Uncommon", "Common", "Damaged"];
 
@@ -41,10 +42,8 @@ function calculateRiskAdjustedPrice(basePrice, risk) {
  * @returns {boolean} - True if the item should be lost
  */
 function shouldLoseItem(risk) {
-  // Generate random number between 0-100
-  const random = Math.random() * 100;
-  // Item is lost if random number is less than risk percentage
-  return random < risk;
+  // Item is lost if random chance is less than risk percentage
+  return randomChance(risk);
 }
 
 const ITEM_NAMES = [
@@ -361,11 +360,11 @@ export default function ListingsPage() {
       const newRow = Array.from({ length: ROW_LENGTH }, (_, index) => {
         const id = nextDynamicId + index;
 
-        const status = STATUSES[Math.floor(Math.random() * STATUSES.length)];
-        const risk = 15 + Math.floor(Math.random() * 66); // 15–80% range
+        const status = randomElement(STATUSES);
+        const risk = randomIntRange(15, 80); // 15–80% range
 
-        const nameIndex = Math.floor(Math.random() * ITEM_NAMES.length);
-        const basePrice = 10 + id * 3 + Math.floor(Math.random() * 50);
+        const nameIndex = randomInt(ITEM_NAMES.length);
+        const basePrice = 10 + id * 3 + randomInt(50);
         const adjustedPrice = calculateRiskAdjustedPrice(basePrice, risk);
 
         return {

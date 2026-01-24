@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { useExperience } from "../../contexts/ExperienceContext";
 import { RECIPES, calculateSuccessRate, isRecipeUnlocked } from "../../constants/recipes";
 import { XP_REWARDS } from "../../constants/xpRewards";
+import { randomChance } from "../../utils/rng";
 
 const STORAGE_KEY_INVENTORY_ITEMS = "inventory-items";
 const STORAGE_KEY_CRAFTING_STATS = "crafting-stats";
@@ -194,12 +195,11 @@ export default function CraftingPage() {
     
     // Calculate success rate
     const successRate = calculateSuccessRate(selectedRecipe, materials);
-    const roll = Math.random() * 100;
 
     // Award XP for attempt
     addExperience(XP_REWARDS.CRAFT_FAILURE);
 
-    if (roll < successRate) {
+    if (randomChance(successRate)) {
       // Success!
       const result = selectedRecipe.result;
       
