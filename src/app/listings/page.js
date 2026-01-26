@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import toast from "react-hot-toast";
 import { useBalance } from "../../contexts/BalanceContext";
 import { useExperience } from "../../contexts/ExperienceContext";
@@ -103,8 +103,8 @@ function createListings(currentDay = 1) {
     const status = STATUSES[index % STATUSES.length];
     const risk = 15 + (index * 3) % 66; // 15–80% range
 
-    // Calculate base price
-    const basePrice = 10 + id * 3;
+    // Calculate base price (reduced by ~80%)
+    const basePrice = (10 + id * 3) * 0.2;
     
     // Apply risk adjustment to get base price
     const riskAdjustedBasePrice = calculateRiskAdjustedPrice(basePrice, risk);
@@ -138,8 +138,8 @@ function createAdditionalListings(currentDay = 1) {
     const status = STATUSES[(index * 7) % STATUSES.length]; // Different pattern
     const risk = 15 + (index * 5) % 66; // 15–80% range
 
-    // Calculate base price
-    const basePrice = 15 + id * 4;
+    // Calculate base price (reduced by ~80%)
+    const basePrice = (15 + id * 4) * 0.2;
     
     // Apply risk adjustment to get base price
     const riskAdjustedBasePrice = calculateRiskAdjustedPrice(basePrice, risk);
@@ -176,6 +176,12 @@ export default function ListingsPage() {
   const [extraListingRows, setExtraListingRows] = useState([]);
   const [currentDay, setCurrentDay] = useState(1);
   const [selectedItemForGraph, setSelectedItemForGraph] = useState(null);
+  
+  // Filter state
+  const [priceMin, setPriceMin] = useState("");
+  const [priceMax, setPriceMax] = useState("");
+  const [riskMin, setRiskMin] = useState("");
+  const [riskMax, setRiskMax] = useState("");
 
   // Load current day from localStorage
   useEffect(() => {
@@ -238,6 +244,11 @@ export default function ListingsPage() {
     return maxId + 1;
   });
 
+  // Create stable string representation of removedCardIds for dependency tracking
+  const removedCardIdsKey = useMemo(() => {
+    return Array.from(removedCardIds).sort().join(',');
+  }, [removedCardIds]);
+
   // Mark as hydrated and restore UI state from localStorage
   useEffect(() => {
     setIsHydrated(true);
@@ -257,6 +268,14 @@ export default function ListingsPage() {
           if (typeof parsed.nextDynamicId === "number" && parsed.nextDynamicId > 0) {
             setNextDynamicId(parsed.nextDynamicId);
           }
+          // Restore selected listings
+          if (Array.isArray(parsed.removedCards)) {
+            setRemovedCards(parsed.removedCards);
+          }
+          // Restore removed card IDs (convert array back to Set)
+          if (Array.isArray(parsed.removedCardIds)) {
+            setRemovedCardIds(new Set(parsed.removedCardIds));
+          }
         }
       }
     } catch {
@@ -264,7 +283,7 @@ export default function ListingsPage() {
     }
   }, []);
 
-  // Persist UI state (card size + extra rows) whenever it changes
+  // Persist UI state (card size + extra rows + selected listings) whenever it changes
   useEffect(() => {
     if (!isHydrated) return;
 
@@ -272,6 +291,8 @@ export default function ListingsPage() {
       listingSize,
       extraListingRows,
       nextDynamicId,
+      removedCards,
+      removedCardIds: Array.from(removedCardIds), // Convert Set to Array for JSON serialization
     };
 
     try {
@@ -279,7 +300,7 @@ export default function ListingsPage() {
     } catch {
       // Ignore write errors (e.g., storage full)
     }
-  }, [listingSize, extraListingRows, nextDynamicId, isHydrated]);
+  }, [listingSize, extraListingRows, nextDynamicId, removedCards, removedCardIdsKey, isHydrated]);
 
   const handleCardClick = (listing) => {
     // Always set selected item for price graph when clicked
@@ -413,7 +434,7 @@ export default function ListingsPage() {
         const risk = randomIntRange(15, 80); // 15–80% range
 
         const nameIndex = randomInt(ITEM_NAMES.length);
-        const basePrice = 10 + id * 3 + randomInt(50);
+        const basePrice = (10 + id * 3 + randomInt(50)) * 0.2;
         const riskAdjustedBasePrice = calculateRiskAdjustedPrice(basePrice, risk);
         
         // Calculate daily fluctuating price
@@ -451,6 +472,27 @@ export default function ListingsPage() {
       return rowsCopy;
     });
   };
+
+  // Helper function to parse price from formatted string
+  const parsePrice = (priceString) => {
+    return parseFloat(priceString.replace(/[^0-9.-]+/g, ""));
+  };
+
+  // Filter function to check if a listing matches the current filters
+  const matchesFilters = useCallback((listing) => {
+    const price = parsePrice(listing.price);
+    const risk = listing.risk;
+
+    // Check price filters
+    if (priceMin !== "" && price < parseFloat(priceMin)) return false;
+    if (priceMax !== "" && price > parseFloat(priceMax)) return false;
+
+    // Check risk filters
+    if (riskMin !== "" && risk < parseFloat(riskMin)) return false;
+    if (riskMax !== "" && risk > parseFloat(riskMax)) return false;
+
+    return true;
+  }, [priceMin, priceMax, riskMin, riskMax]);
 
   // Generate price history for the last 10 days for a given item
   const generatePriceHistory = (item, days = 10) => {
@@ -550,11 +592,45 @@ export default function ListingsPage() {
     const areaPath = `${pathData} L ${points[points.length - 1].x} ${padding.top + chartHeight} L ${points[0].x} ${padding.top + chartHeight} Z`;
 
     // Generate nice, evenly spaced price values for grid lines
-    const generateNiceTicks = (min, max, count = 5) => {
+    // Ensures between 4 and 6 ticks
+    const generateNiceTicks = (min, max) => {
       const range = max - min;
-      const roughStep = range / (count - 1);
+      if (range === 0) return [min];
       
-      // Calculate a nice round step size
+      // Try different target counts to get between 4-6 ticks
+      const targetCounts = [5, 6, 4]; // Prefer 5, then 6, then 4
+      
+      for (const targetCount of targetCounts) {
+        const roughStep = range / (targetCount - 1);
+        
+        // Calculate a nice round step size
+        const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
+        const normalizedStep = roughStep / magnitude;
+        let niceStep;
+        
+        if (normalizedStep <= 1) niceStep = 1 * magnitude;
+        else if (normalizedStep <= 2) niceStep = 2 * magnitude;
+        else if (normalizedStep <= 5) niceStep = 5 * magnitude;
+        else niceStep = 10 * magnitude;
+        
+        // Round min and max to nice values
+        const niceMin = Math.floor(min / niceStep) * niceStep;
+        const niceMax = Math.ceil(max / niceStep) * niceStep;
+        
+        // Generate ticks
+        const ticks = [];
+        for (let value = niceMin; value <= niceMax + niceStep * 0.001; value += niceStep) {
+          ticks.push(value);
+        }
+        
+        // Check if we have between 4 and 6 ticks
+        if (ticks.length >= 4 && ticks.length <= 6) {
+          return ticks;
+        }
+      }
+      
+      // Fallback: if we couldn't get 4-6, return the last attempt
+      const roughStep = range / 4;
       const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
       const normalizedStep = roughStep / magnitude;
       let niceStep;
@@ -564,20 +640,18 @@ export default function ListingsPage() {
       else if (normalizedStep <= 5) niceStep = 5 * magnitude;
       else niceStep = 10 * magnitude;
       
-      // Round min and max to nice values
       const niceMin = Math.floor(min / niceStep) * niceStep;
       const niceMax = Math.ceil(max / niceStep) * niceStep;
       
-      // Generate ticks
       const ticks = [];
-      for (let value = niceMin; value <= niceMax; value += niceStep) {
+      for (let value = niceMin; value <= niceMax + niceStep * 0.001; value += niceStep) {
         ticks.push(value);
       }
       
       return ticks;
     };
 
-    const gridTicks = generateNiceTicks(rawMinPrice, rawMaxPrice, 5);
+    const gridTicks = generateNiceTicks(minPrice, maxPrice);
 
     return (
       <div style={{ marginTop: "16px" }}>
@@ -692,16 +766,16 @@ export default function ListingsPage() {
   const carouselListings = useMemo(() => {
     if (listings.length === 0) return [];
     return [...listings, ...listings].filter(
-      (listing) => !removedCardIds.has(listing.id)
+      (listing) => !removedCardIds.has(listing.id) && matchesFilters(listing)
     );
-  }, [listings, removedCardIds]);
+  }, [listings, removedCardIds, matchesFilters]);
 
   const carouselListingsFast = useMemo(() => {
     if (additionalListings.length === 0) return [];
     return [...additionalListings, ...additionalListings].filter(
-      (listing) => !removedCardIds.has(listing.id)
+      (listing) => !removedCardIds.has(listing.id) && matchesFilters(listing)
     );
-  }, [additionalListings, removedCardIds]);
+  }, [additionalListings, removedCardIds, matchesFilters]);
 
   return (
     <section className={`page listings-size-${listingSize}`}>
@@ -718,6 +792,210 @@ export default function ListingsPage() {
           maxHeight: "calc(100vh - 200px)",
           overflowY: "auto"
         }}>
+          {/* Filters Section */}
+          <div style={{ 
+            marginBottom: "16px", 
+            padding: "16px", 
+            background: "color-mix(in oklab, var(--background) 98%, transparent)",
+            borderRadius: "10px",
+            border: "1px solid color-mix(in oklab, var(--foreground) 8%, transparent)"
+          }}>
+            <div style={{ 
+              fontSize: "0.9rem", 
+              fontWeight: "600", 
+              marginBottom: "12px",
+              color: "var(--foreground)",
+              opacity: 0.9
+            }}>
+              Filters
+            </div>
+            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "flex-end" }}>
+              {/* Price Range Filters */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", minWidth: "140px" }}>
+                <label style={{ fontSize: "0.8rem", opacity: 0.7, fontWeight: "500" }}>Price Range</label>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <input
+                    type="number"
+                    placeholder="Min"
+                    value={priceMin}
+                    onChange={(e) => setPriceMin(e.target.value)}
+                    style={{
+                      width: "70px",
+                      padding: "0.4rem 0.6rem",
+                      borderRadius: "6px",
+                      border: "1px solid color-mix(in oklab, var(--foreground) 18%, transparent)",
+                      background: "var(--background)",
+                      color: "var(--foreground)",
+                      fontSize: "0.85rem",
+                    }}
+                  />
+                  <span style={{ opacity: 0.5 }}>—</span>
+                  <input
+                    type="number"
+                    placeholder="Max"
+                    value={priceMax}
+                    onChange={(e) => setPriceMax(e.target.value)}
+                    style={{
+                      width: "70px",
+                      padding: "0.4rem 0.6rem",
+                      borderRadius: "6px",
+                      border: "1px solid color-mix(in oklab, var(--foreground) 18%, transparent)",
+                      background: "var(--background)",
+                      color: "var(--foreground)",
+                      fontSize: "0.85rem",
+                    }}
+                  />
+                </div>
+              </div>
+              
+              {/* Risk Range Filters */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", minWidth: "140px" }}>
+                <label style={{ fontSize: "0.8rem", opacity: 0.7, fontWeight: "500" }}>Risk Range (%)</label>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <input
+                    type="number"
+                    placeholder="Min"
+                    min="0"
+                    max="100"
+                    value={riskMin}
+                    onChange={(e) => setRiskMin(e.target.value)}
+                    style={{
+                      width: "70px",
+                      padding: "0.4rem 0.6rem",
+                      borderRadius: "6px",
+                      border: "1px solid color-mix(in oklab, var(--foreground) 18%, transparent)",
+                      background: "var(--background)",
+                      color: "var(--foreground)",
+                      fontSize: "0.85rem",
+                    }}
+                  />
+                  <span style={{ opacity: 0.5 }}>—</span>
+                  <input
+                    type="number"
+                    placeholder="Max"
+                    min="0"
+                    max="100"
+                    value={riskMax}
+                    onChange={(e) => setRiskMax(e.target.value)}
+                    style={{
+                      width: "70px",
+                      padding: "0.4rem 0.6rem",
+                      borderRadius: "6px",
+                      border: "1px solid color-mix(in oklab, var(--foreground) 18%, transparent)",
+                      background: "var(--background)",
+                      color: "var(--foreground)",
+                      fontSize: "0.85rem",
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Quick Filters */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "0.8rem", opacity: 0.7, fontWeight: "500" }}>Quick Filters</label>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <button
+                    onClick={() => {
+                      setPriceMax("100");
+                      setPriceMin("");
+                      setRiskMin("");
+                      setRiskMax("");
+                    }}
+                    style={{
+                      padding: "0.4rem 0.8rem",
+                      borderRadius: "6px",
+                      border: "1px solid color-mix(in oklab, #4a90e2 50%, transparent)",
+                      background: priceMax === "100" && priceMin === ""
+                        ? "color-mix(in oklab, #4a90e2 20%, var(--background) 90%)"
+                        : "color-mix(in oklab, var(--background) 94%, transparent)",
+                      color: "var(--foreground)",
+                      cursor: "pointer",
+                      fontSize: "0.85rem",
+                      fontWeight: "500",
+                      transition: "all 0.15s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!(priceMax === "100" && priceMin === "")) {
+                        e.currentTarget.style.background = "color-mix(in oklab, #4a90e2 12%, var(--background) 92%)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!(priceMax === "100" && priceMin === "")) {
+                        e.currentTarget.style.background = "color-mix(in oklab, var(--background) 94%, transparent)";
+                      }
+                    }}
+                  >
+                    Under $100
+                  </button>
+                  <button
+                    onClick={() => {
+                      setRiskMax("30");
+                      setRiskMin("");
+                      setPriceMin("");
+                      setPriceMax("");
+                    }}
+                    style={{
+                      padding: "0.4rem 0.8rem",
+                      borderRadius: "6px",
+                      border: "1px solid color-mix(in oklab, #22c55e 50%, transparent)",
+                      background: riskMax === "30" && riskMin === ""
+                        ? "color-mix(in oklab, #22c55e 20%, var(--background) 90%)"
+                        : "color-mix(in oklab, var(--background) 94%, transparent)",
+                      color: "var(--foreground)",
+                      cursor: "pointer",
+                      fontSize: "0.85rem",
+                      fontWeight: "500",
+                      transition: "all 0.15s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!(riskMax === "30" && riskMin === "")) {
+                        e.currentTarget.style.background = "color-mix(in oklab, #22c55e 12%, var(--background) 92%)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!(riskMax === "30" && riskMin === "")) {
+                        e.currentTarget.style.background = "color-mix(in oklab, var(--background) 94%, transparent)";
+                      }
+                    }}
+                  >
+                    Low Risk
+                  </button>
+                </div>
+              </div>
+
+              {/* Clear Filters Button */}
+              {(priceMin !== "" || priceMax !== "" || riskMin !== "" || riskMax !== "") && (
+                <button
+                  onClick={() => {
+                    setPriceMin("");
+                    setPriceMax("");
+                    setRiskMin("");
+                    setRiskMax("");
+                  }}
+                  style={{
+                    padding: "0.4rem 0.8rem",
+                    borderRadius: "6px",
+                    border: "1px solid color-mix(in oklab, var(--foreground) 18%, transparent)",
+                    background: "color-mix(in oklab, var(--background) 94%, transparent)",
+                    color: "var(--foreground)",
+                    cursor: "pointer",
+                    fontSize: "0.85rem",
+                    fontWeight: "500",
+                    transition: "all 0.15s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "color-mix(in oklab, var(--foreground) 8%, var(--background) 92%)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "color-mix(in oklab, var(--background) 94%, transparent)";
+                  }}
+                >
+                  Clear Filters
+                </button>
+              )}
+            </div>
+          </div>
+
           <div style={{ display: "flex", gap: "8px", marginBottom: "12px", flexWrap: "wrap" }}>
         <span style={{ alignSelf: "center", opacity: 0.8, fontSize: "0.95rem" }}>Card size:</span>
         {["xs", "sm", "md"].map((size) => (
@@ -848,7 +1126,7 @@ export default function ListingsPage() {
           {extraListingRows.map((row, rowIndex) => (
             <div key={`extra-row-${rowIndex}`} className="listings-row">
               {row
-                .filter((listing) => !removedCardIds.has(listing.id))
+                .filter((listing) => !removedCardIds.has(listing.id) && matchesFilters(listing))
                 .map((listing) => {
                   const isRemoved = removedCardIds.has(listing.id);
 

@@ -43,10 +43,10 @@ function generateItemSeed(itemId, itemName, basePrice) {
  * @param {number} currentDay - Current game day
  * @param {number|string} itemId - Unique item identifier
  * @param {string} itemName - Item name
- * @param {number} fluctuationRange - Maximum percentage fluctuation (0-1), default 0.3 (30%)
+ * @param {number} fluctuationRange - Maximum percentage fluctuation (0-1), default 0.15 (15%)
  * @returns {number} The daily price for the item
  */
-export function calculateDailyPrice(basePrice, currentDay, itemId, itemName, fluctuationRange = 0.3) {
+export function calculateDailyPrice(basePrice, currentDay, itemId, itemName, fluctuationRange = 0.15) {
   if (!basePrice || basePrice <= 0) return 1;
   if (!currentDay || currentDay < 1) return basePrice;
   
@@ -100,10 +100,10 @@ export function formatPrice(price) {
  * @param {number} currentDay - Current game day
  * @param {number|string} itemId - Unique item identifier
  * @param {string} itemName - Item name
- * @param {number} fluctuationRange - Maximum percentage fluctuation (0-1), default 0.3 (30%)
+ * @param {number} fluctuationRange - Maximum percentage fluctuation (0-1), default 0.15 (15%)
  * @returns {string} Formatted daily price string
  */
-export function getDailyPriceFormatted(basePrice, currentDay, itemId, itemName, fluctuationRange = 0.3) {
+export function getDailyPriceFormatted(basePrice, currentDay, itemId, itemName, fluctuationRange = 0.15) {
   const dailyPrice = calculateDailyPrice(basePrice, currentDay, itemId, itemName, fluctuationRange);
   return formatPrice(dailyPrice);
 }
