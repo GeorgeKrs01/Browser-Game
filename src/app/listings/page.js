@@ -6,7 +6,7 @@ import { useBalance } from "../../contexts/BalanceContext";
 import { useExperience } from "../../contexts/ExperienceContext";
 import { XP_REWARDS } from "../../constants/xpRewards";
 import { randomChance, randomElement, randomInt, randomIntRange } from "../../utils/rng";
-import { calculateDailyPrice, formatPrice } from "../../utils/pricing";
+import { calculateDailyPrice, formatPrice, getPriceHistory } from "../../utils/pricing";
 
 const STATUSES = ["Legendary", "Rare", "Uncommon", "Common", "Damaged"];
 
@@ -175,6 +175,7 @@ export default function ListingsPage() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [extraListingRows, setExtraListingRows] = useState([]);
   const [currentDay, setCurrentDay] = useState(1);
+  const [selectedItemForGraph, setSelectedItemForGraph] = useState(null);
 
   // Load current day from localStorage
   useEffect(() => {
@@ -281,6 +282,10 @@ export default function ListingsPage() {
   }, [listingSize, extraListingRows, nextDynamicId, isHydrated]);
 
   const handleCardClick = (listing) => {
+    // Always set selected item for price graph when clicked
+    setSelectedItemForGraph(listing);
+
+    // If item is already removed, just show the graph
     if (removedCardIds.has(listing.id)) return;
 
     // Extract price from listing (format: "$1,234")
@@ -323,6 +328,11 @@ export default function ListingsPage() {
     // Keep it in removedCardIds so it doesn't reappear in carousel
     setRemovedCards((prev) => prev.filter((card) => card.id !== listing.id));
     toast.success(`Removed ${listing.name} and refunded ${listing.price}`);
+  };
+
+  const handleViewItemGraph = (listing) => {
+    // Set selected item for price graph without purchasing
+    setSelectedItemForGraph(listing);
   };
 
   const handleMoveToInventory = () => {
@@ -440,6 +450,243 @@ export default function ListingsPage() {
       rowsCopy.pop();
       return rowsCopy;
     });
+  };
+
+  // Generate price history for the last 10 days for a given item
+  const generatePriceHistory = (item, days = 10) => {
+    if (!item) return [];
+    
+    const basePrice = item.basePrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+    if (!basePrice || basePrice <= 0) return [];
+    
+    const history = [];
+    const startDay = Math.max(1, currentDay - days + 1);
+    
+    for (let day = startDay; day <= currentDay; day++) {
+      const price = calculateDailyPrice(basePrice, day, item.id, item.name);
+      history.push({ day, price });
+    }
+    
+    return history;
+  };
+
+  // Simple line chart component for price history
+  const PriceHistoryChart = ({ data, itemName }) => {
+    if (!data || data.length === 0) {
+      return (
+        <div style={{ 
+          padding: "20px", 
+          textAlign: "center", 
+          color: "color-mix(in oklab, var(--foreground) 50%, transparent)",
+          fontSize: "13px"
+        }}>
+          No price history available
+        </div>
+      );
+    }
+
+    const width = 300;
+    const height = 150;
+    const padding = { top: 10, right: 10, bottom: 30, left: 25 };
+    const chartWidth = width - padding.left - padding.right;
+    const chartHeight = height - padding.top - padding.bottom;
+
+    const prices = data.map(d => d.price);
+    const rawMinPrice = Math.min(...prices);
+    const rawMaxPrice = Math.max(...prices);
+    const rawPriceRange = rawMaxPrice - rawMinPrice || 1;
+    
+    // Add padding (15% on each side) to give the graph breathing room
+    const paddingPercent = 0.15;
+    const paddingAmount = rawPriceRange * paddingPercent;
+    const minPrice = rawMinPrice - paddingAmount;
+    const maxPrice = rawMaxPrice + paddingAmount;
+    const priceRange = maxPrice - minPrice || 1; // Avoid division by zero
+
+    // Normalize prices to chart coordinates
+    const points = data.map((d, index) => {
+      const x = padding.left + (index / (data.length - 1 || 1)) * chartWidth;
+      const y = padding.top + chartHeight - ((d.price - minPrice) / priceRange) * chartHeight;
+      return { x, y, day: d.day, price: d.price };
+    });
+
+    // Create smooth curve path using cubic Bézier curves
+    const createSmoothPath = (points) => {
+      if (points.length === 0) return '';
+      if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+      if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+      
+      let path = `M ${points[0].x} ${points[0].y}`;
+      
+      // Use cubic Bézier curves for smooth interpolation
+      for (let i = 0; i < points.length - 1; i++) {
+        const p0 = points[Math.max(0, i - 1)];
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const p3 = points[Math.min(points.length - 1, i + 2)];
+        
+        // Calculate control points for smooth curve
+        const tension = 0.3; // Controls curve smoothness (0 = straight, 1 = very curved)
+        const cp1x = p1.x + (p2.x - p0.x) * tension;
+        const cp1y = p1.y + (p2.y - p0.y) * tension;
+        const cp2x = p2.x - (p3.x - p1.x) * tension;
+        const cp2y = p2.y - (p3.y - p1.y) * tension;
+        
+        // Use smooth curve for all segments except the last one
+        if (i < points.length - 2) {
+          path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+        } else {
+          // Last segment: ensure it ends at the last point
+          path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+        }
+      }
+      
+      return path;
+    };
+
+    const pathData = createSmoothPath(points);
+
+    // Create area path (for gradient fill) - need to follow the smooth curve
+    const areaPath = `${pathData} L ${points[points.length - 1].x} ${padding.top + chartHeight} L ${points[0].x} ${padding.top + chartHeight} Z`;
+
+    // Generate nice, evenly spaced price values for grid lines
+    const generateNiceTicks = (min, max, count = 5) => {
+      const range = max - min;
+      const roughStep = range / (count - 1);
+      
+      // Calculate a nice round step size
+      const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
+      const normalizedStep = roughStep / magnitude;
+      let niceStep;
+      
+      if (normalizedStep <= 1) niceStep = 1 * magnitude;
+      else if (normalizedStep <= 2) niceStep = 2 * magnitude;
+      else if (normalizedStep <= 5) niceStep = 5 * magnitude;
+      else niceStep = 10 * magnitude;
+      
+      // Round min and max to nice values
+      const niceMin = Math.floor(min / niceStep) * niceStep;
+      const niceMax = Math.ceil(max / niceStep) * niceStep;
+      
+      // Generate ticks
+      const ticks = [];
+      for (let value = niceMin; value <= niceMax; value += niceStep) {
+        ticks.push(value);
+      }
+      
+      return ticks;
+    };
+
+    const gridTicks = generateNiceTicks(rawMinPrice, rawMaxPrice, 5);
+
+    return (
+      <div style={{ marginTop: "16px" }}>
+        <div style={{ 
+          fontSize: "12px", 
+          fontWeight: "600", 
+          marginBottom: "8px", 
+          textTransform: "uppercase", 
+          letterSpacing: "0.05em", 
+          color: "color-mix(in oklab, var(--foreground) 50%, transparent)" 
+        }}>
+          Price History (Last 10 Days)
+        </div>
+        <div style={{ fontSize: "14px", fontWeight: "600", marginBottom: "12px", color: "var(--foreground)" }}>
+          {itemName}
+        </div>
+        <svg width={width} height={height} style={{ display: "block" }}>
+          <defs>
+            <linearGradient id={`priceGradient-${itemName.replace(/\s+/g, '-')}`} x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#4a90e2" stopOpacity="0.3" />
+              <stop offset="100%" stopColor="#4a90e2" stopOpacity="0.05" />
+            </linearGradient>
+          </defs>
+          
+          {/* Grid lines */}
+          {gridTicks.map((price) => {
+            // Only show grid lines that are within the visible range (with padding)
+            if (price < minPrice || price > maxPrice) return null;
+            
+            const y = padding.top + chartHeight - ((price - minPrice) / priceRange) * chartHeight;
+            return (
+              <g key={price}>
+                <line
+                  x1={padding.left}
+                  y1={y}
+                  x2={width - padding.right}
+                  y2={y}
+                  stroke="rgba(128, 128, 128, 0.15)"
+                  strokeWidth="1"
+                />
+                <text
+                  x={padding.left - 8}
+                  y={y + 4}
+                  textAnchor="end"
+                  fontSize="10"
+                  fill="rgba(128, 128, 128, 0.6)"
+                >
+                  {formatPrice(Math.round(price))}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* Area fill */}
+          <path
+            d={areaPath}
+            fill={`url(#priceGradient-${itemName.replace(/\s+/g, '-')})`}
+          />
+
+          {/* Line */}
+          <path
+            d={pathData}
+            fill="none"
+            stroke="#4a90e2"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+
+          {/* Data points */}
+          {points.map((point, index) => (
+            <g key={index}>
+              <circle
+                cx={point.x}
+                cy={point.y}
+                r="3"
+                fill="#4a90e2"
+                stroke="var(--background)"
+                strokeWidth="2"
+              />
+              {/* Day labels */}
+              {index % Math.ceil(data.length / 5) === 0 || index === data.length - 1 ? (
+                <text
+                  x={point.x}
+                  y={height - padding.bottom + 12}
+                  textAnchor="middle"
+                  fontSize="10"
+                  fill="rgba(128, 128, 128, 0.7)"
+                >
+                  {point.day}
+                </text>
+              ) : null}
+            </g>
+          ))}
+          
+          {/* Days label */}
+          <text
+            x={width / 2}
+            y={height - padding.bottom + 25}
+            textAnchor="middle"
+            fontSize="10"
+            fill="rgba(128, 128, 128, 0.7)"
+            fontWeight="500"
+          >
+            Days
+          </text>
+        </svg>
+      </div>
+    );
   };
 
   const carouselListings = useMemo(() => {
@@ -717,6 +964,8 @@ export default function ListingsPage() {
               <article
                 key={`display-${listing.id}-${index}`}
                 className={`listing-card listing-card-${listing.status.toLowerCase()}`}
+                onClick={() => handleViewItemGraph(listing)}
+                style={{ cursor: "pointer" }}
               >
                 <header className="listing-card-header">
                   <div className="listing-card-title">{listing.name}</div>
@@ -745,6 +994,10 @@ export default function ListingsPage() {
                   onClick={(e) => {
                     e.stopPropagation();
                     handleRemoveCard(listing);
+                    // Clear graph if removing the selected item
+                    if (selectedItemForGraph?.id === listing.id) {
+                      setSelectedItemForGraph(null);
+                    }
                   }}
                   style={{
                     marginTop: "12px",
@@ -775,82 +1028,22 @@ export default function ListingsPage() {
       )}
         </div>
 
-        {/* Info Panel */}
-        <div style={{
-          border: "1px solid color-mix(in oklab, var(--foreground) 12%, transparent)",
-          borderRadius: "14px",
-          padding: "20px",
-          background: "color-mix(in oklab, var(--background) 96%, transparent)",
-          position: "sticky",
-          top: "24px",
-          maxHeight: "calc(100vh - 100px)",
-          overflowY: "auto"
-        }}>
-          <h2 style={{ 
-            fontSize: "20px", 
-            margin: "0 0 16px 0", 
-            fontWeight: "600",
-            letterSpacing: "-0.01em"
+        {/* Price Graph Panel */}
+        {selectedItemForGraph && (
+          <div style={{
+            border: "1px solid color-mix(in oklab, var(--foreground) 12%, transparent)",
+            borderRadius: "14px",
+            padding: "20px",
+            background: "color-mix(in oklab, var(--background) 96%, transparent)",
+            position: "sticky",
+            top: "24px"
           }}>
-            Market Info
-          </h2>
-          <div style={{ 
-            display: "flex", 
-            flexDirection: "column", 
-            gap: "16px",
-            color: "color-mix(in oklab, var(--foreground) 70%, transparent)"
-          }}>
-            <div>
-              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em", color: "color-mix(in oklab, var(--foreground) 50%, transparent)" }}>
-                Current Day
-              </div>
-              <div style={{ fontSize: "18px", fontWeight: "700", color: "var(--foreground)" }}>
-                Day {currentDay}
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em", color: "color-mix(in oklab, var(--foreground) 50%, transparent)" }}>
-                Your Balance
-              </div>
-              <div style={{ fontSize: "18px", fontWeight: "700", color: "var(--foreground)" }}>
-                {balance.toLocaleString("en-US", {
-                  style: "currency",
-                  currency: "USD",
-                  maximumFractionDigits: 0,
-                })}
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em", color: "color-mix(in oklab, var(--foreground) 50%, transparent)" }}>
-                Selected Items
-              </div>
-              <div style={{ fontSize: "18px", fontWeight: "700", color: "var(--foreground)" }}>
-                {removedCards.length}
-              </div>
-            </div>
-            <div style={{ 
-              marginTop: "8px",
-              paddingTop: "16px",
-              borderTop: "1px solid color-mix(in oklab, var(--foreground) 10%, transparent)"
-            }}>
-              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.05em", color: "color-mix(in oklab, var(--foreground) 50%, transparent)" }}>
-                Tips
-              </div>
-              <ul style={{ 
-                margin: 0, 
-                paddingLeft: "20px", 
-                fontSize: "13px",
-                lineHeight: "1.6",
-                color: "color-mix(in oklab, var(--foreground) 70%, transparent)"
-              }}>
-                <li>Click on items to purchase them</li>
-                <li>Higher risk items are cheaper but may be lost</li>
-                <li>Prices fluctuate daily</li>
-                <li>Move items to inventory when ready</li>
-              </ul>
-            </div>
+            <PriceHistoryChart 
+              data={generatePriceHistory(selectedItemForGraph)} 
+              itemName={selectedItemForGraph.name}
+            />
           </div>
-        </div>
+        )}
       </div>
     </section>
   );
