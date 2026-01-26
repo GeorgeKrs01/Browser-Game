@@ -307,6 +307,26 @@ body {
   max-width: 980px;
 }
 
+/* Listings page with two-column layout */
+.page.listings-size-xs,
+.page.listings-size-sm,
+.page.listings-size-md {
+  max-width: 1400px;
+}
+
+.listings-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .listings-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 .page-title {
   font-size: 28px;
   margin: 0 0 8px;

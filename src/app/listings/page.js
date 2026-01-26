@@ -6,6 +6,7 @@ import { useBalance } from "../../contexts/BalanceContext";
 import { useExperience } from "../../contexts/ExperienceContext";
 import { XP_REWARDS } from "../../constants/xpRewards";
 import { randomChance, randomElement, randomInt, randomIntRange } from "../../utils/rng";
+import { calculateDailyPrice, formatPrice } from "../../utils/pricing";
 
 const STATUSES = ["Legendary", "Rare", "Uncommon", "Common", "Damaged"];
 
@@ -71,6 +72,7 @@ const ITEM_NAMES = [
 
 const STORAGE_KEY_INVENTORY_ITEMS = "inventory-items";
 const STORAGE_KEY_LISTINGS_UI = "listings-ui-state";
+const STORAGE_KEY_DAY = "game-day";
 const MAX_BACKPACK_CAPACITY = 500; // Maximum number of items
 
 // Seeded random number generator for deterministic shuffling
@@ -93,7 +95,7 @@ function shuffleArray(array, seed = 12345) {
   return shuffled;
 }
 
-function createListings() {
+function createListings(currentDay = 1) {
   // Use a fixed seed so server and client produce the same shuffle
   const shuffledNames = shuffleArray(ITEM_NAMES, 12345);
   return Array.from({ length: 100 }, (_, index) => {
@@ -104,17 +106,18 @@ function createListings() {
     // Calculate base price
     const basePrice = 10 + id * 3;
     
-    // Apply risk adjustment to get final price
-    const adjustedPrice = calculateRiskAdjustedPrice(basePrice, risk);
+    // Apply risk adjustment to get base price
+    const riskAdjustedBasePrice = calculateRiskAdjustedPrice(basePrice, risk);
+    
+    // Calculate daily fluctuating price
+    const itemName = shuffledNames[index % shuffledNames.length];
+    const dailyPrice = calculateDailyPrice(riskAdjustedBasePrice, currentDay, id, itemName);
 
     return {
       id,
-      name: shuffledNames[index % shuffledNames.length],
-      price: adjustedPrice.toLocaleString("en-US", {
-        style: "currency",
-        currency: "USD",
-        maximumFractionDigits: 0,
-      }),
+      name: itemName,
+      basePrice: riskAdjustedBasePrice, // Store base price for inventory
+      price: formatPrice(dailyPrice),
       description:
         status === "Legendary"
           ? "High value loot with rare bonuses."
@@ -127,7 +130,7 @@ function createListings() {
   });
 }
 
-function createAdditionalListings() {
+function createAdditionalListings(currentDay = 1) {
   // Use a different seed for the second carousel to get different random items
   const shuffledNames = shuffleArray(ITEM_NAMES, 67890);
   return Array.from({ length: 50 }, (_, index) => {
@@ -138,17 +141,18 @@ function createAdditionalListings() {
     // Calculate base price
     const basePrice = 15 + id * 4;
     
-    // Apply risk adjustment to get final price
-    const adjustedPrice = calculateRiskAdjustedPrice(basePrice, risk);
+    // Apply risk adjustment to get base price
+    const riskAdjustedBasePrice = calculateRiskAdjustedPrice(basePrice, risk);
+    
+    // Calculate daily fluctuating price
+    const itemName = shuffledNames[index % shuffledNames.length];
+    const dailyPrice = calculateDailyPrice(riskAdjustedBasePrice, currentDay, id, itemName);
 
     return {
       id,
-      name: shuffledNames[index % shuffledNames.length],
-      price: adjustedPrice.toLocaleString("en-US", {
-        style: "currency",
-        currency: "USD",
-        maximumFractionDigits: 0,
-      }),
+      name: itemName,
+      basePrice: riskAdjustedBasePrice, // Store base price for inventory
+      price: formatPrice(dailyPrice),
       description:
         status === "Legendary"
           ? "High value loot with rare bonuses."
@@ -166,17 +170,65 @@ export default function ListingsPage() {
   const { balance, deductBalance, addBalance } = useBalance();
   const { addExperience } = useExperience();
   const [listingSize, setListingSize] = useState("md"); // sm | md | lg
-  const [selectedCardIds, setSelectedCardIds] = useState(new Set());
-  const [removingCardIds, setRemovingCardIds] = useState(new Set());
   const [removedCardIds, setRemovedCardIds] = useState(new Set());
   const [removedCards, setRemovedCards] = useState([]);
   const [isHydrated, setIsHydrated] = useState(false);
   const [extraListingRows, setExtraListingRows] = useState([]);
+  const [currentDay, setCurrentDay] = useState(1);
+
+  // Load current day from localStorage
+  useEffect(() => {
+    const savedDay = localStorage.getItem(STORAGE_KEY_DAY);
+    if (savedDay) {
+      try {
+        setCurrentDay(parseInt(savedDay, 10));
+      } catch (e) {
+        // Invalid data, ignore
+      }
+    }
+
+    // Listen for day changes
+    const handleStorageChange = (e) => {
+      if (e.key === STORAGE_KEY_DAY && e.newValue) {
+        try {
+          const day = parseInt(e.newValue, 10);
+          if (!isNaN(day)) {
+            setCurrentDay(day);
+          }
+        } catch (e) {
+          // Invalid data, ignore
+        }
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    
+    // Also check periodically (in case storage events don't fire for same-tab updates)
+    const interval = setInterval(() => {
+      const savedDay = localStorage.getItem(STORAGE_KEY_DAY);
+      if (savedDay) {
+        try {
+          const day = parseInt(savedDay, 10);
+          if (!isNaN(day) && day !== currentDay) {
+            setCurrentDay(day);
+          }
+        } catch (e) {
+          // Invalid data, ignore
+        }
+      }
+    }, 1000);
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      clearInterval(interval);
+    };
+  }, [currentDay]);
 
   // Generate listings deterministically (same on server and client)
   // Using seeded shuffle ensures server and client produce identical results
-  const listings = useMemo(() => createListings(), []);
-  const additionalListings = useMemo(() => createAdditionalListings(), []);
+  // Recalculate when day changes to update prices
+  const listings = useMemo(() => createListings(currentDay), [currentDay]);
+  const additionalListings = useMemo(() => createAdditionalListings(currentDay), [currentDay]);
 
   // Track next unique ID for dynamically added listings
   const [nextDynamicId, setNextDynamicId] = useState(() => {
@@ -229,7 +281,7 @@ export default function ListingsPage() {
   }, [listingSize, extraListingRows, nextDynamicId, isHydrated]);
 
   const handleCardClick = (listing) => {
-    if (removedCardIds.has(listing.id) || removingCardIds.has(listing.id)) return;
+    if (removedCardIds.has(listing.id)) return;
 
     // Extract price from listing (format: "$1,234")
     const price = parseFloat(listing.price.replace(/[^0-9.-]+/g, ""));
@@ -248,37 +300,16 @@ export default function ListingsPage() {
     deductBalance(price);
     // Award experience for purchase
     addExperience(XP_REWARDS.PURCHASE_ITEM);
-    toast.success(`Purchased ${listing.name} for ${listing.price}!`);
 
-    // Add to selected
-    setSelectedCardIds((prev) => new Set([...prev, listing.id]));
-
-    // After 1 second, start removing
-    setTimeout(() => {
-      setRemovingCardIds((prev) => new Set([...prev, listing.id]));
-      setSelectedCardIds((prev) => {
-        const next = new Set(prev);
-        next.delete(listing.id);
-        return next;
-      });
-
-      // After fade animation completes, remove from carousel and add to display
-      setTimeout(() => {
-        setRemovedCardIds((prev) => new Set([...prev, listing.id]));
-        setRemovingCardIds((prev) => {
-          const next = new Set(prev);
-          next.delete(listing.id);
-          return next;
-        });
-        setRemovedCards((prev) => {
-          // Check if card already exists to prevent duplicates
-          if (prev.some((card) => card.id === listing.id)) {
-            return prev;
-          }
-          return [...prev, listing];
-        });
-      }, 500); // Match CSS transition duration
-    }, 1000);
+    // Immediately remove from carousel and add to display (no animation)
+    setRemovedCardIds((prev) => new Set([...prev, listing.id]));
+    setRemovedCards((prev) => {
+      // Check if card already exists to prevent duplicates
+      if (prev.some((card) => card.id === listing.id)) {
+        return prev;
+      }
+      return [...prev, listing];
+    });
   };
 
   const handleRemoveCard = (listing) => {
@@ -331,10 +362,18 @@ export default function ListingsPage() {
     
     // Generate unique IDs for each item being added
     const maxId = existingInventory.reduce((max, item) => Math.max(max, item.id || 0), 0);
-    const itemsWithUniqueIds = itemsToAdd.map((item, index) => ({
-      ...item,
-      id: maxId + index + 1, // Assign unique ID to each item
-    }));
+    const itemsWithUniqueIds = itemsToAdd.map((item, index) => {
+      const newId = maxId + index + 1;
+      // Store basePrice for daily price calculation
+      // If basePrice doesn't exist, extract it from the current price
+      const basePrice = item.basePrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+      return {
+        ...item,
+        id: newId, // Assign unique ID to each item
+        basePrice: basePrice, // Store base price for daily fluctuations
+        // Keep the current price as the purchase price, but it will be recalculated daily in inventory
+      };
+    });
     
     // Add all selected cards to inventory
     const updatedInventory = [...existingInventory, ...itemsWithUniqueIds];
@@ -365,16 +404,17 @@ export default function ListingsPage() {
 
         const nameIndex = randomInt(ITEM_NAMES.length);
         const basePrice = 10 + id * 3 + randomInt(50);
-        const adjustedPrice = calculateRiskAdjustedPrice(basePrice, risk);
+        const riskAdjustedBasePrice = calculateRiskAdjustedPrice(basePrice, risk);
+        
+        // Calculate daily fluctuating price
+        const itemName = ITEM_NAMES[nameIndex];
+        const dailyPrice = calculateDailyPrice(riskAdjustedBasePrice, currentDay, id, itemName);
 
         return {
           id,
-          name: ITEM_NAMES[nameIndex],
-          price: adjustedPrice.toLocaleString("en-US", {
-            style: "currency",
-            currency: "USD",
-            maximumFractionDigits: 0,
-          }),
+          name: itemName,
+          basePrice: riskAdjustedBasePrice, // Store base price for inventory
+          price: formatPrice(dailyPrice),
           description:
             status === "Legendary"
               ? "High value loot with rare bonuses."
@@ -419,11 +459,19 @@ export default function ListingsPage() {
   return (
     <section className={`page listings-size-${listingSize}`}>
       <h1 className="page-title">Listings</h1>
-      <p className="page-subtitle">
-        Browse 100 market listings with status and risk profile.
-      </p>
+    
 
-      <div style={{ display: "flex", gap: "8px", marginBottom: "12px", flexWrap: "wrap" }}>
+      <div className="listings-layout">
+        {/* Listings Container */}
+        <div style={{
+          border: "1px solid color-mix(in oklab, var(--foreground) 12%, transparent)",
+          borderRadius: "14px",
+          padding: "20px",
+          background: "color-mix(in oklab, var(--background) 96%, transparent)",
+          maxHeight: "calc(100vh - 200px)",
+          overflowY: "auto"
+        }}>
+          <div style={{ display: "flex", gap: "8px", marginBottom: "12px", flexWrap: "wrap" }}>
         <span style={{ alignSelf: "center", opacity: 0.8, fontSize: "0.95rem" }}>Card size:</span>
         {["xs", "sm", "md"].map((size) => (
           <button
@@ -508,19 +556,16 @@ export default function ListingsPage() {
       <div className="listings-carousel" aria-label="Listings carousel">
         <div className="listings-row">
           {carouselListings.map((listing, index) => {
-            const isSelected = selectedCardIds.has(listing.id);
-            const isRemoving = removingCardIds.has(listing.id);
+            const isRemoved = removedCardIds.has(listing.id);
 
             return (
               <article
                 key={`${listing.id}-${index}`}
-                className={`listing-card listing-card-${listing.status.toLowerCase()} ${
-                  isSelected ? "listing-card-selected" : ""
-                      } ${isRemoving ? "listing-card-removing" : ""} listing-card-animated`}
+                className={`listing-card listing-card-${listing.status.toLowerCase()} listing-card-animated`}
                 onClick={() => handleCardClick(listing)}
                 style={{
-                  cursor: isRemoving ? "default" : "pointer",
-                        animationDelay: `${index * 40}ms`,
+                  cursor: isRemoved ? "default" : "pointer",
+                  animationDelay: `${index * 40}ms`,
                 }}
               >
                 <header className="listing-card-header">
@@ -558,18 +603,15 @@ export default function ListingsPage() {
               {row
                 .filter((listing) => !removedCardIds.has(listing.id))
                 .map((listing) => {
-                  const isSelected = selectedCardIds.has(listing.id);
-                  const isRemoving = removingCardIds.has(listing.id);
+                  const isRemoved = removedCardIds.has(listing.id);
 
                   return (
                     <article
                       key={`extra-${listing.id}`}
-                      className={`listing-card listing-card-${listing.status.toLowerCase()} ${
-                        isSelected ? "listing-card-selected" : ""
-                      } ${isRemoving ? "listing-card-removing" : ""}`}
+                      className={`listing-card listing-card-${listing.status.toLowerCase()}`}
                       onClick={() => handleCardClick(listing)}
                       style={{
-                        cursor: isRemoving ? "default" : "pointer",
+                        cursor: isRemoved ? "default" : "pointer",
                       }}
                     >
                       <header className="listing-card-header">
@@ -605,18 +647,15 @@ export default function ListingsPage() {
       <div className="listings-carousel" aria-label="Fast listings carousel">
         <div className="listings-row listings-row-fast">
           {carouselListingsFast.map((listing, index) => {
-            const isSelected = selectedCardIds.has(listing.id);
-            const isRemoving = removingCardIds.has(listing.id);
+            const isRemoved = removedCardIds.has(listing.id);
 
             return (
               <article
                 key={`fast-${listing.id}-${index}`}
-                className={`listing-card listing-card-${listing.status.toLowerCase()} ${
-                  isSelected ? "listing-card-selected" : ""
-                } ${isRemoving ? "listing-card-removing" : ""}`}
+                className={`listing-card listing-card-${listing.status.toLowerCase()}`}
                 onClick={() => handleCardClick(listing)}
                 style={{
-                  cursor: isRemoving ? "default" : "pointer",
+                  cursor: isRemoved ? "default" : "pointer",
                 }}
               >
                 <header className="listing-card-header">
@@ -678,8 +717,6 @@ export default function ListingsPage() {
               <article
                 key={`display-${listing.id}-${index}`}
                 className={`listing-card listing-card-${listing.status.toLowerCase()}`}
-                onClick={() => handleRemoveCard(listing)}
-                style={{ cursor: "pointer" }}
               >
                 <header className="listing-card-header">
                   <div className="listing-card-title">{listing.name}</div>
@@ -703,11 +740,118 @@ export default function ListingsPage() {
                     style={{ width: `${listing.risk}%` }}
                   />
                 </div>
+
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveCard(listing);
+                  }}
+                  style={{
+                    marginTop: "12px",
+                    padding: "0.5rem 1rem",
+                    width: "100%",
+                    backgroundColor: "#ef4444",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    fontSize: "0.9rem",
+                    fontWeight: "600",
+                    transition: "background-color 0.2s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.backgroundColor = "#dc2626";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.backgroundColor = "#ef4444";
+                  }}
+                >
+                  Remove
+                </button>
               </article>
             ))}
           </div>
         </div>
       )}
+        </div>
+
+        {/* Info Panel */}
+        <div style={{
+          border: "1px solid color-mix(in oklab, var(--foreground) 12%, transparent)",
+          borderRadius: "14px",
+          padding: "20px",
+          background: "color-mix(in oklab, var(--background) 96%, transparent)",
+          position: "sticky",
+          top: "24px",
+          maxHeight: "calc(100vh - 100px)",
+          overflowY: "auto"
+        }}>
+          <h2 style={{ 
+            fontSize: "20px", 
+            margin: "0 0 16px 0", 
+            fontWeight: "600",
+            letterSpacing: "-0.01em"
+          }}>
+            Market Info
+          </h2>
+          <div style={{ 
+            display: "flex", 
+            flexDirection: "column", 
+            gap: "16px",
+            color: "color-mix(in oklab, var(--foreground) 70%, transparent)"
+          }}>
+            <div>
+              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em", color: "color-mix(in oklab, var(--foreground) 50%, transparent)" }}>
+                Current Day
+              </div>
+              <div style={{ fontSize: "18px", fontWeight: "700", color: "var(--foreground)" }}>
+                Day {currentDay}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em", color: "color-mix(in oklab, var(--foreground) 50%, transparent)" }}>
+                Your Balance
+              </div>
+              <div style={{ fontSize: "18px", fontWeight: "700", color: "var(--foreground)" }}>
+                {balance.toLocaleString("en-US", {
+                  style: "currency",
+                  currency: "USD",
+                  maximumFractionDigits: 0,
+                })}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em", color: "color-mix(in oklab, var(--foreground) 50%, transparent)" }}>
+                Selected Items
+              </div>
+              <div style={{ fontSize: "18px", fontWeight: "700", color: "var(--foreground)" }}>
+                {removedCards.length}
+              </div>
+            </div>
+            <div style={{ 
+              marginTop: "8px",
+              paddingTop: "16px",
+              borderTop: "1px solid color-mix(in oklab, var(--foreground) 10%, transparent)"
+            }}>
+              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.05em", color: "color-mix(in oklab, var(--foreground) 50%, transparent)" }}>
+                Tips
+              </div>
+              <ul style={{ 
+                margin: 0, 
+                paddingLeft: "20px", 
+                fontSize: "13px",
+                lineHeight: "1.6",
+                color: "color-mix(in oklab, var(--foreground) 70%, transparent)"
+              }}>
+                <li>Click on items to purchase them</li>
+                <li>Higher risk items are cheaper but may be lost</li>
+                <li>Prices fluctuate daily</li>
+                <li>Move items to inventory when ready</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }

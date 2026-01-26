@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import toast from "react-hot-toast";
 import { useBalance } from "../../contexts/BalanceContext";
 import { useExperience } from "../../contexts/ExperienceContext";
 import { XP_REWARDS } from "../../constants/xpRewards";
 import { randomPercent, randomPercentRange, randomChance } from "../../utils/rng";
+import { calculateDailyPrice, formatPrice, updateAllItemsPriceHistory, cleanupPriceHistory } from "../../utils/pricing";
 
 const STORAGE_KEY_INVENTORY_ITEMS = "inventory-items";
 const STORAGE_KEY_DAY = "game-day";
@@ -104,7 +105,19 @@ export default function MyInventoryPage() {
     if (saved) {
       try {
         loadedItems = JSON.parse(saved);
-        setInventoryItems(loadedItems);
+        // Migrate old items: if basePrice doesn't exist, extract it from price
+        const migratedItems = loadedItems.map((item) => {
+          if (!item.basePrice) {
+            // Extract basePrice from current price (for backward compatibility)
+            const currentPrice = parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+            return {
+              ...item,
+              basePrice: currentPrice,
+            };
+          }
+          return item;
+        });
+        setInventoryItems(migratedItems);
       } catch (e) {
         // Invalid data, ignore
       }
@@ -306,54 +319,47 @@ export default function MyInventoryPage() {
     }
   }, [repairedItemIds, isHydrated]);
 
-  // Monitor day changes and decrease prices when a new day occurs
+  // Calculate daily prices for inventory items based on current day
+  // This creates a memoized version of items with daily fluctuating prices
+  const itemsWithDailyPrices = useMemo(() => {
+    if (!isHydrated) return [];
+    if (inventoryItems.length === 0) return [];
+    
+    return inventoryItems.map((item) => {
+      // Get basePrice (should exist after migration, but fallback to current price)
+      const basePrice = item.basePrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+      
+      // Calculate daily price based on current day
+      const dailyPrice = calculateDailyPrice(
+        basePrice,
+        currentDay,
+        item.id,
+        item.name || "Unknown Item"
+      );
+      
+      return {
+        ...item,
+        basePrice: basePrice, // Ensure basePrice is set
+        price: formatPrice(dailyPrice), // Update price to daily price
+        dailyPrice: dailyPrice, // Store numeric value for calculations
+      };
+    });
+  }, [inventoryItems, currentDay, isHydrated]);
+
+  // Track price history when day changes or when items are added
+  useEffect(() => {
+    if (!isHydrated || inventoryItems.length === 0) return;
+    
+    // Update price history for all items when day changes or when new items are added
+    updateAllItemsPriceHistory(inventoryItems, currentDay);
+  }, [currentDay, inventoryItems, isHydrated]);
+
+  // Clean up price history for items that no longer exist
   useEffect(() => {
     if (!isHydrated) return;
-
-    // Get last processed day
-    const lastUpdateDayStr = localStorage.getItem(STORAGE_KEY_LAST_PRICE_UPDATE_DAY);
-    const lastUpdateDay = lastUpdateDayStr ? parseInt(lastUpdateDayStr, 10) : null;
-
-    // If it's a new day and we haven't processed it yet
-    if (lastUpdateDay === null || currentDay > lastUpdateDay) {
-      // Decrease prices for all inventory items
-      setInventoryItems((prevItems) => {
-        if (prevItems.length === 0) {
-          // Still update last processed day even if no items
-          localStorage.setItem(STORAGE_KEY_LAST_PRICE_UPDATE_DAY, currentDay.toString());
-          return prevItems;
-        }
-
-        const updatedItems = prevItems.map((item) => {
-          const currentPrice = parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
-          
-          // Generate a random decrease percentage between 0% and 5% for this item
-          // Each item gets a different random percentage each day
-          const randomDecreasePercent = randomPercentRange(
-            MIN_PRICE_DECREASE_PERCENTAGE,
-            MAX_PRICE_DECREASE_PERCENTAGE
-          );
-          
-          const newPrice = Math.max(1, Math.round(currentPrice * (1 - randomDecreasePercent)));
-          
-          const newPriceFormatted = newPrice.toLocaleString("en-US", {
-            style: "currency",
-            currency: "USD",
-            maximumFractionDigits: 0,
-          });
-
-          return {
-            ...item,
-            price: newPriceFormatted,
-          };
-        });
-
-        // Update last processed day
-        localStorage.setItem(STORAGE_KEY_LAST_PRICE_UPDATE_DAY, currentDay.toString());
-        return updatedItems;
-      });
-    }
-  }, [isHydrated, currentDay]);
+    
+    cleanupPriceHistory(inventoryItems);
+  }, [inventoryItems, isHydrated]);
 
   const handleItemClick = (itemId) => {
     // Allow selecting items even if they've been checked (for selling)
@@ -391,7 +397,7 @@ export default function MyInventoryPage() {
       return;
     }
     
-    // Get selected items
+    // Get selected items from inventoryItems (for state updates)
     const selectedItems = inventoryItems.filter((item) =>
       selectedItemIds.has(item.id)
     );
@@ -449,9 +455,9 @@ export default function MyInventoryPage() {
       
       failedRepairs.forEach((item) => {
         if (insuredItemIds.has(item.id)) {
-          // Item is insured, refund the item cost
-          const itemPrice = parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
-          totalRefund += itemPrice;
+          // Item is insured, refund the item cost (use basePrice for refund)
+          const basePrice = item.basePrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+          totalRefund += basePrice;
         }
       });
       
@@ -508,7 +514,8 @@ export default function MyInventoryPage() {
     const successfulItemIds = successfulRepairs.map(item => item.id);
     
     successfulRepairs.forEach((item) => {
-      const basePrice = parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+      // Use basePrice if available, otherwise extract from price
+      const basePrice = item.basePrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
       oldPricesMap.set(item.id, basePrice);
       
       // Get next status tier
@@ -605,14 +612,14 @@ export default function MyInventoryPage() {
                 return next;
               });
               
-              // Update item status and price
+              // Update item status and basePrice (daily price will be recalculated)
               setInventoryItems((prevItems) => {
                 return prevItems.map((item) => {
                   if (item.id === itemId) {
                     return {
                       ...item,
                       status: upgrade.newStatus,
-                      price: upgrade.newPriceFormatted,
+                      basePrice: upgrade.newPrice, // Update basePrice, not formatted price
                     };
                   }
                   return item;
@@ -662,8 +669,8 @@ export default function MyInventoryPage() {
       return;
     }
     
-    // Get selected items
-    const selectedItems = inventoryItems.filter((item) =>
+    // Get selected items from itemsWithDailyPrices (for current price calculations)
+    const selectedItems = itemsWithDailyPrices.filter((item) =>
       selectedItemIds.has(item.id)
     );
     
@@ -698,8 +705,8 @@ export default function MyInventoryPage() {
       toast(`Only insuring ${uninsuredItemIds.length} uninsured item(s).`, { duration: 2000 });
     }
     
-    // Get the items to insure
-    const itemsToInsure = inventoryItems.filter((item) =>
+    // Get the items to insure from itemsWithDailyPrices (for current price calculations)
+    const itemsToInsure = itemsWithDailyPrices.filter((item) =>
       uninsuredItemIds.includes(item.id)
     );
     
@@ -708,7 +715,8 @@ export default function MyInventoryPage() {
     // Higher risk items cost more to insure (up to 60% at 100% risk)
     // Lower risk items cost less to insure (down to 10% at 0% risk)
     const totalCost = itemsToInsure.reduce((sum, item) => {
-      const itemPrice = parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+      // Use dailyPrice for insurance cost calculation
+      const itemPrice = item.dailyPrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
       // Base cost: 10% of item value
       // Risk adjustment: add 0.5% per 1% of risk
       // Range: 10% (0% risk) to 60% (100% risk)
@@ -815,14 +823,15 @@ export default function MyInventoryPage() {
     
     // Calculate money gained from sold items (with risk adjustment and floor price)
     const moneyGained = itemsSold.reduce((sum, item) => {
-      const basePrice = parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+      // Use dailyPrice for selling calculations
+      const basePrice = item.dailyPrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
       const sellingPrice = calculateRiskAdjustedSellingPrice(basePrice, item.risk, QUICK_SALE_FLOOR_PRICE_PERCENTAGE);
       return sum + sellingPrice;
     }, 0);
     
-    // Calculate money lost from lost items
+    // Calculate money lost from lost items (use daily price)
     const moneyLost = itemsLost.reduce((sum, item) => {
-      const price = parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+      const price = item.dailyPrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
       return sum + price;
     }, 0);
     
@@ -896,6 +905,24 @@ export default function MyInventoryPage() {
     } else {
       // No items selected (shouldn't happen, but handle edge case)
       toast.error("No items were processed.", { duration: 10000 });
+    }
+  };
+
+  const handleSelectAll = () => {
+    if (inventoryItems.length === 0) {
+      return;
+    }
+    
+    // If all items are selected, deselect all
+    // Otherwise, select all items
+    const allItemIds = new Set(inventoryItems.map(item => item.id));
+    const allSelected = inventoryItems.length > 0 && 
+      inventoryItems.every(item => selectedItemIds.has(item.id));
+    
+    if (allSelected) {
+      setSelectedItemIds(new Set());
+    } else {
+      setSelectedItemIds(allItemIds);
     }
   };
 
@@ -1037,12 +1064,42 @@ export default function MyInventoryPage() {
               gap: "1rem",
             }}
           >
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "1rem" }}>
               {selectedItemIds.size > 0 && (
                 <p style={{ margin: 0, fontSize: "0.9rem", opacity: 0.8 }}>
                   {selectedItemIds.size} item{selectedItemIds.size === 1 ? "" : "s"} selected
                 </p>
               )}
+              <button
+                onClick={handleSelectAll}
+                disabled={inventoryItems.length === 0}
+                style={{
+                  padding: "0.5rem 1rem",
+                  backgroundColor: inventoryItems.length === 0 ? "#ccc" : "#6b7280",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: inventoryItems.length === 0 ? "not-allowed" : "pointer",
+                  fontSize: "0.9rem",
+                  fontWeight: "500",
+                  opacity: inventoryItems.length === 0 ? 0.6 : 1,
+                }}
+                onMouseEnter={(e) => {
+                  if (inventoryItems.length > 0) {
+                    e.target.style.backgroundColor = "#4b5563";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (inventoryItems.length > 0) {
+                    e.target.style.backgroundColor = "#6b7280";
+                  }
+                }}
+              >
+                {inventoryItems.length > 0 && 
+                 inventoryItems.every(item => selectedItemIds.has(item.id))
+                  ? "Deselect All"
+                  : "Select All"}
+              </button>
             </div>
             <div style={{ display: "flex", gap: "0.5rem" }}>
               {(() => {
@@ -1067,11 +1124,12 @@ export default function MyInventoryPage() {
                 // Calculate insurance cost for uninsured selected items (scales with risk)
                 let insuranceCost = 0;
                 if (uninsuredSelectedItems.length > 0) {
-                  const itemsToInsure = inventoryItems.filter((item) =>
+                  const itemsToInsure = itemsWithDailyPrices.filter((item) =>
                     uninsuredSelectedItems.includes(item.id)
                   );
                   insuranceCost = itemsToInsure.reduce((sum, item) => {
-                    const itemPrice = parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+                    // Use dailyPrice for insurance cost calculation
+                    const itemPrice = item.dailyPrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
                     // Base cost: 10% of item value
                     // Risk adjustment: add 0.5% per 1% of risk
                     // Range: 10% (0% risk) to 60% (100% risk)
@@ -1198,7 +1256,7 @@ export default function MyInventoryPage() {
             </div>
           </div>
           <div className="listings-display-grid">
-            {inventoryItems.map((item, index) => {
+            {itemsWithDailyPrices.map((item, index) => {
               const isSelected = selectedItemIds.has(item.id);
               const checkProgress = checkingItems.get(item.id);
               const isChecking = checkProgress !== undefined;
