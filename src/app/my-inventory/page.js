@@ -544,7 +544,7 @@ export default function MyInventoryPage() {
     const progressIncrement = (UPDATE_INTERVAL_MS / REPAIR_DURATION_MS) * 100;
 
     // Award experience for successful repairs
-    const xpGained = successfulItemIds.length * XP_REWARDS.CHECK_ITEM_PRICE;
+    const xpGained = successfulItemIds.length * XP_REWARDS.QUICK_SALE_ITEM;
     if (xpGained > 0) {
       addExperience(xpGained);
     }

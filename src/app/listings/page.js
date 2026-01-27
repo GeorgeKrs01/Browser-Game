@@ -677,33 +677,56 @@ export default function ListingsPage() {
           </defs>
           
           {/* Grid lines */}
-          {gridTicks.map((price) => {
-            // Only show grid lines that are within the visible range (with padding)
-            if (price < minPrice || price > maxPrice) return null;
-            
-            const y = padding.top + chartHeight - ((price - minPrice) / priceRange) * chartHeight;
-            return (
-              <g key={price}>
-                <line
-                  x1={padding.left}
-                  y1={y}
-                  x2={width - padding.right}
-                  y2={y}
-                  stroke="rgba(128, 128, 128, 0.15)"
-                  strokeWidth="1"
-                />
-                <text
-                  x={padding.left - 8}
-                  y={y + 4}
-                  textAnchor="end"
-                  fontSize="10"
-                  fill="rgba(128, 128, 128, 0.6)"
-                >
-                  {formatPrice(Math.round(price))}
-                </text>
-              </g>
-            );
-          })}
+          {(() => {
+            const displayedLabels = new Set();
+            return gridTicks.map((price) => {
+              // Only show grid lines that are within the visible range (with padding)
+              if (price < minPrice || price > maxPrice) return null;
+              
+              const y = padding.top + chartHeight - ((price - minPrice) / priceRange) * chartHeight;
+              const roundedPrice = Math.round(price);
+              const formattedPrice = formatPrice(roundedPrice);
+              
+              // Skip if we've already displayed this rounded price value
+              if (displayedLabels.has(roundedPrice)) {
+                return (
+                  <g key={price}>
+                    <line
+                      x1={padding.left}
+                      y1={y}
+                      x2={width - padding.right}
+                      y2={y}
+                      stroke="rgba(128, 128, 128, 0.15)"
+                      strokeWidth="1"
+                    />
+                  </g>
+                );
+              }
+              
+              displayedLabels.add(roundedPrice);
+              return (
+                <g key={price}>
+                  <line
+                    x1={padding.left}
+                    y1={y}
+                    x2={width - padding.right}
+                    y2={y}
+                    stroke="rgba(128, 128, 128, 0.15)"
+                    strokeWidth="1"
+                  />
+                  <text
+                    x={padding.left - 8}
+                    y={y + 4}
+                    textAnchor="end"
+                    fontSize="10"
+                    fill="rgba(128, 128, 128, 0.6)"
+                  >
+                    {formattedPrice}
+                  </text>
+                </g>
+              );
+            });
+          })()}
 
           {/* Area fill */}
           <path

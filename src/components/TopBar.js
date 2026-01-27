@@ -21,7 +21,7 @@ const DAY_SPEEDS = {
 
 export function TopBar({ isSidebarHidden, onToggleSidebar }) {
   const { balance, resetBalance } = useBalance();
-  const { level, experience, XP_PER_LEVEL } = useExperience();
+  const { level, experience, XP_PER_LEVEL, resetLevelTo1 } = useExperience();
   const [day, setDay] = useState(1);
   const [isHydrated, setIsHydrated] = useState(false);
   const [daySpeed, setDaySpeed] = useState(DAY_SPEEDS.normal);
@@ -232,7 +232,8 @@ export function TopBar({ isSidebarHidden, onToggleSidebar }) {
               className="icon-button"
               onClick={() => {
                 resetBalance();
-                toast.success("Balance reset to $2,000");
+                resetLevelTo1();
+                toast.success("Balance reset to $2,000 and level reset to 1");
               }}
               aria-label="Reset balance to $2,000"
               title="Reset balance to $2,000"

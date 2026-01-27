@@ -82,12 +82,24 @@ export function ExperienceProvider({ children }) {
     }
   };
 
+  const resetLevelTo1 = () => {
+    // Set level first, then experience to -1000 so the formula calculates: Math.floor(-1000 / 1000) + 2 = -1 + 2 = 1
+    // The useEffect only increases level, so setting level to 1 manually ensures it stays at 1
+    setLevel(1);
+    setExperience(-1000);
+    if (isHydrated) {
+      localStorage.setItem(STORAGE_KEY_LEVEL, "1");
+      localStorage.setItem(STORAGE_KEY_EXPERIENCE, "-1000");
+    }
+  };
+
   return (
     <ExperienceContext.Provider value={{ 
       level, 
       experience, 
       addExperience, 
       resetExperience,
+      resetLevelTo1,
       XP_PER_LEVEL 
     }}>
       {children}
