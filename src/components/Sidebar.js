@@ -30,6 +30,9 @@ export function Sidebar({ isHidden = false }) {
           <Link className="sidebar-link" href="/quests">
             Quests
           </Link>
+          <Link className="sidebar-link sidebar-link-highlighted" href="/amount-styles">
+            Amount Styles
+          </Link>
         </nav>
       </div>
     </aside>

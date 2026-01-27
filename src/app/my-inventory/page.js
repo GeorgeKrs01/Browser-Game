@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import toast from "react-hot-toast";
+import { ChevronUp, ChevronDown } from "lucide-react";
 import { useBalance } from "../../contexts/BalanceContext";
 import { useExperience } from "../../contexts/ExperienceContext";
 import { XP_REWARDS } from "../../constants/xpRewards";
@@ -14,6 +14,9 @@ const STORAGE_KEY_LAST_PRICE_UPDATE_DAY = "last-price-update-day";
 const STORAGE_KEY_CHECKED_ITEMS = "checked-items";
 const STORAGE_KEY_REPAIRED_ITEMS = "repaired-items";
 const STORAGE_KEY_DAY_SPEED = "day-speed";
+const STORAGE_KEY_SALES_HISTORY = "sales-history";
+const MAX_SALES_HISTORY = 20;
+const SALES_CAROUSEL_VISIBLE_ICONS = 8; // Number of icons visible in the carousel (adjustable)
 const MAX_PRICE_DECREASE_PERCENTAGE = 0.05; // Maximum 5% decrease per day
 const MIN_PRICE_DECREASE_PERCENTAGE = 0.00; // Minimum 0% decrease per day
 const QUICK_SALE_FLOOR_PRICE_PERCENTAGE = 0.10; // Floor price is 10% of base price for quick sale
@@ -96,6 +99,9 @@ export default function MyInventoryPage() {
   const [insuredItemIds, setInsuredItemIds] = useState(new Set()); // Set of itemIds that have been insured
   const [repairedItemIds, setRepairedItemIds] = useState(new Set()); // Set of itemIds that have been repaired
   const [daySpeed, setDaySpeed] = useState(DAY_SPEEDS.normal);
+  const [selectedItemForGraph, setSelectedItemForGraph] = useState(null);
+  const [salesHistory, setSalesHistory] = useState([]); // Array of sales history entries
+  const [newTransactionIds, setNewTransactionIds] = useState(new Set()); // Track newly added transactions for animation
 
   // Load inventory items from localStorage after hydration
   useEffect(() => {
@@ -174,6 +180,34 @@ export default function MyInventoryPage() {
         const speed = parseInt(savedSpeed, 10);
         if (speed > 0) {
           setDaySpeed(speed);
+        }
+      } catch (e) {
+        // Invalid data, ignore
+      }
+    }
+
+    // Load sales history
+    const savedSalesHistory = localStorage.getItem(STORAGE_KEY_SALES_HISTORY);
+    if (savedSalesHistory) {
+      try {
+        const history = JSON.parse(savedSalesHistory);
+        if (Array.isArray(history)) {
+          // Filter and validate entries, ensuring all have required properties
+          const validHistory = history
+            .filter(sale => 
+              sale && 
+              typeof sale.profit === 'number' && 
+              typeof sale.amount === 'number' && 
+              !isNaN(sale.profit) && 
+              !isNaN(sale.amount)
+            )
+            .map(sale => ({
+              profit: sale.profit,
+              amount: Math.abs(sale.profit || 0),
+              timestamp: sale.timestamp || Date.now(),
+            }))
+            .slice(-MAX_SALES_HISTORY);
+          setSalesHistory(validHistory);
         }
       } catch (e) {
         // Invalid data, ignore
@@ -319,6 +353,13 @@ export default function MyInventoryPage() {
     }
   }, [repairedItemIds, isHydrated]);
 
+  // Save sales history to localStorage whenever it changes (only after hydration)
+  useEffect(() => {
+    if (isHydrated) {
+      localStorage.setItem(STORAGE_KEY_SALES_HISTORY, JSON.stringify(salesHistory));
+    }
+  }, [salesHistory, isHydrated]);
+
   // Calculate daily prices for inventory items based on current day
   // This creates a memoized version of items with daily fluctuating prices
   const itemsWithDailyPrices = useMemo(() => {
@@ -372,6 +413,12 @@ export default function MyInventoryPage() {
       }
       return next;
     });
+    
+    // Set selected item for graph
+    const item = itemsWithDailyPrices.find(i => i.id === itemId);
+    if (item) {
+      setSelectedItemForGraph(item);
+    }
   };
 
   /**
@@ -393,7 +440,6 @@ export default function MyInventoryPage() {
 
   const handleCheck = () => {
     if (selectedItemIds.size === 0) {
-      toast.error("Please select items to repair.");
       return;
     }
     
@@ -410,19 +456,9 @@ export default function MyInventoryPage() {
     const alreadyRepairedItems = repairableItems.filter(item => repairedItemIds.has(item.id));
     const unrepairedItems = repairableItems.filter(item => !repairedItemIds.has(item.id));
     
-    if (legendaryItems.length > 0) {
-      toast.error("Legendary items cannot be repaired.", { duration: 3000 });
-    }
-    
-    if (alreadyRepairedItems.length > 0) {
-      toast.error("Some items have already been repaired and cannot be repaired again.", { duration: 3000 });
-    }
-    
     if (unrepairedItems.length === 0) {
       if (legendaryItems.length > 0 || alreadyRepairedItems.length > 0) {
         setSelectedItemIds(new Set());
-      } else {
-        toast.error("Please select items to repair.");
       }
       return;
     }
@@ -491,15 +527,6 @@ export default function MyInventoryPage() {
           currency: "USD",
           maximumFractionDigits: 0,
         });
-        toast.error(
-          `💥 ${failedRepairs.length} item(s) destroyed during repair! ${totalRefund > 0 ? `Insurance refunded ${refundFormatted}.` : ""}`,
-          { duration: 5000 }
-        );
-      } else {
-        toast.error(
-          `💥 ${failedRepairs.length} item(s) destroyed during repair!`,
-          { duration: 5000 }
-        );
       }
     }
     
@@ -653,19 +680,10 @@ export default function MyInventoryPage() {
         }
       }, UPDATE_INTERVAL_MS);
     });
-    
-    // Show success toast
-    if (successfulRepairs.length > 0) {
-      toast.success(
-        `✨ ${successfulRepairs.length} item(s) successfully repaired and upgraded!`,
-        { duration: 3000 }
-      );
-    }
   };
 
   const handleInsure = () => {
     if (selectedItemIds.size === 0) {
-      toast.error("Please select items to insure.");
       return;
     }
     
@@ -678,15 +696,9 @@ export default function MyInventoryPage() {
     const legendaryItems = selectedItems.filter(item => item.status === "Legendary");
     const insurableItems = selectedItems.filter(item => item.status !== "Legendary");
     
-    if (legendaryItems.length > 0) {
-      toast.error("Legendary items cannot be insured.", { duration: 3000 });
-    }
-    
     if (insurableItems.length === 0) {
       if (legendaryItems.length > 0) {
         setSelectedItemIds(new Set());
-      } else {
-        toast.error("Please select items to insure.");
       }
       return;
     }
@@ -697,12 +709,7 @@ export default function MyInventoryPage() {
       .map((item) => item.id);
     
     if (uninsuredItemIds.length === 0) {
-      toast.error("All selected items have already been insured.");
       return;
-    }
-    
-    if (uninsuredItemIds.length < insurableItems.length) {
-      toast(`Only insuring ${uninsuredItemIds.length} uninsured item(s).`, { duration: 2000 });
     }
     
     // Get the items to insure from itemsWithDailyPrices (for current price calculations)
@@ -734,11 +741,6 @@ export default function MyInventoryPage() {
         currency: "USD",
         maximumFractionDigits: 0,
       });
-      toast.error(`Insufficient balance! Insurance costs ${totalCostFormatted} but you only have ${balance.toLocaleString("en-US", {
-        style: "currency",
-        currency: "USD",
-        maximumFractionDigits: 0,
-      })}.`);
       return;
     }
     
@@ -756,14 +758,6 @@ export default function MyInventoryPage() {
     
     // Deselect all items
     setSelectedItemIds(new Set());
-    
-    const totalCostFormatted = totalCost.toLocaleString("en-US", {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: 0,
-    });
-    
-    toast.success(`${uninsuredItemIds.length} item(s) insured for ${totalCostFormatted}!`);
   };
 
   const handleResetDays = () => {
@@ -780,7 +774,6 @@ export default function MyInventoryPage() {
       newValue: "1",
     }));
     
-    toast.success("Days reset to Day 1");
   };
 
   const handleSetDaySpeed = (speedName) => {
@@ -795,117 +788,138 @@ export default function MyInventoryPage() {
         newValue: speed.toString(),
       }));
       
-      toast.success(`Day speed set to ${speedName}`);
     }
   };
 
   const handleQuickSale = () => {
     if (selectedItemIds.size === 0) {
-      toast.error("Please select items to sell.");
       return;
     }
     
-    const selectedItems = inventoryItems.filter((item) =>
+    // Use itemsWithDailyPrices to get items with their daily prices for accurate calculations
+    const selectedItems = itemsWithDailyPrices.filter((item) =>
       selectedItemIds.has(item.id)
     );
     
-    // Process sale immediately
-    const itemsSold = [];
-    const itemsLost = [];
+    // All items are sold - no items are lost in quick sale
+    // Always receive the full market price (dailyPrice) for each item
+    const itemsSold = selectedItems;
     
-    selectedItems.forEach((item) => {
-      if (shouldLoseItem(item.risk)) {
-        itemsLost.push(item);
-      } else {
-        itemsSold.push(item);
-      }
-    });
-    
-    // Calculate money gained from sold items (with risk adjustment and floor price)
+    // Calculate money gained from sold items (always use full market price)
     const moneyGained = itemsSold.reduce((sum, item) => {
-      // Use dailyPrice for selling calculations
-      const basePrice = item.dailyPrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
-      const sellingPrice = calculateRiskAdjustedSellingPrice(basePrice, item.risk, QUICK_SALE_FLOOR_PRICE_PERCENTAGE);
-      return sum + sellingPrice;
+      // Always use the full market price (dailyPrice) - no risk adjustment
+      const marketPrice = item.dailyPrice || item.basePrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+      return sum + marketPrice;
     }, 0);
     
-    // Calculate money lost from lost items (use daily price)
-    const moneyLost = itemsLost.reduce((sum, item) => {
-      const price = item.dailyPrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
-      return sum + price;
+    // Calculate total margin: sale_price - (purchase_price + insurance_cost)
+    const totalMargin = itemsSold.reduce((sum, item) => {
+      // Get purchase price (basePrice is the original purchase price)
+      const purchasePrice = item.basePrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+      
+      // Calculate insurance cost if item was insured
+      let insuranceCost = 0;
+      if (insuredItemIds.has(item.id)) {
+        // Use the same formula as handleInsure, but use basePrice (purchase price) for consistency
+        const basePercentage = 0.10; // 10% base
+        const riskAdjustment = item.risk * 0.005; // 0.5% per risk point
+        const insurancePercentage = basePercentage + riskAdjustment;
+        insuranceCost = Math.round(purchasePrice * insurancePercentage);
+      }
+      
+      // Always use the full market price (dailyPrice) - no risk adjustment
+      const marketPrice = item.dailyPrice || item.basePrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+      
+      // Margin = sale_price - (purchase_price + insurance_cost)
+      const margin = marketPrice - (purchasePrice + insuranceCost);
+      return sum + margin;
     }, 0);
     
-    // Add balance for successfully sold items
+    // Add balance for sold items (always receive full market price)
     if (moneyGained > 0) {
       addBalance(moneyGained);
     }
     
-    // Award experience for successfully sold items (not lost items)
+    // Award experience for sold items
     const xpGained = itemsSold.length * XP_REWARDS.QUICK_SALE_ITEM;
     if (xpGained > 0) {
       addExperience(xpGained);
     }
     
-    // Remove all selected items (both sold and lost)
+    // Record sales history for sold items
+    if (itemsSold.length > 0) {
+      const baseTimestamp = Date.now();
+      const newSales = itemsSold.map((item, index) => {
+        // Always use the full market price (dailyPrice) - no risk adjustment
+        const marketPrice = item.dailyPrice || item.basePrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+        const purchasePrice = item.basePrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+        const profit = marketPrice - purchasePrice;
+        
+        return {
+          profit: profit,
+          amount: Math.abs(profit),
+          timestamp: baseTimestamp + index, // Ensure unique timestamps even for simultaneous sales
+        };
+      });
+      
+      // Add new sales to history and keep only last MAX_SALES_HISTORY entries
+      setSalesHistory((prev) => {
+        const updated = [...prev, ...newSales];
+        const final = updated.slice(-MAX_SALES_HISTORY);
+        
+        // Mark new transactions for animation
+        const newIds = new Set(newSales.map(sale => sale.timestamp));
+        setNewTransactionIds(newIds);
+        
+        // Clear animation class after animation completes
+        setTimeout(() => {
+          setNewTransactionIds(new Set());
+        }, 600); // Match animation duration
+        
+        return final;
+      });
+    }
+    
+    // Remove all selected items
     setInventoryItems((prev) =>
       prev.filter((item) => !selectedItemIds.has(item.id))
     );
     setSelectedItemIds(new Set());
     
-    // Show toast notification with net result
-    const moneyGainedFormatted = moneyGained.toLocaleString("en-US", {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: 0,
-    });
-    
-    const moneyLostFormatted = moneyLost.toLocaleString("en-US", {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: 0,
-    });
-    
-    if (moneyGained > 0 && moneyLost > 0) {
-      // Both gained and lost money
-      const netAmount = moneyGained - moneyLost;
-      const netFormatted = Math.abs(netAmount).toLocaleString("en-US", {
+    // Show individual notifications for each transaction
+    itemsSold.forEach((item) => {
+      // Get purchase price (basePrice is the original purchase price)
+      const purchasePrice = item.basePrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+      
+      // Calculate insurance cost if item was insured
+      let insuranceCost = 0;
+      if (insuredItemIds.has(item.id)) {
+        // Use the same formula as handleInsure, but use basePrice (purchase price) for consistency
+        const basePercentage = 0.10; // 10% base
+        const riskAdjustment = item.risk * 0.005; // 0.5% per risk point
+        const insurancePercentage = basePercentage + riskAdjustment;
+        insuranceCost = Math.round(purchasePrice * insurancePercentage);
+      }
+      
+      // Always use the full market price (dailyPrice) - no risk adjustment
+      const marketPrice = item.dailyPrice || item.basePrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+      
+      // Margin = sale_price - (purchase_price + insurance_cost)
+      const margin = marketPrice - (purchasePrice + insuranceCost);
+      
+      const marginFormatted = margin.toLocaleString("en-US", {
         style: "currency",
         currency: "USD",
         maximumFractionDigits: 0,
       });
       
-      if (netAmount > 0) {
-        toast.success(
-          `💰 Gained ${moneyGainedFormatted} (lost ${moneyLostFormatted} items). Net: +${netFormatted}`,
-          { duration: 10000 }
-        );
-      } else if (netAmount < 0) {
-        toast.error(
-          `💸 Lost ${moneyLostFormatted} worth of items. Gained ${moneyGainedFormatted}. Net: -${netFormatted}`,
-          { duration: 10000 }
-        );
-      } else {
-        toast(
-          `⚖️ Gained ${moneyGainedFormatted} and lost ${moneyLostFormatted}. Net: $0`,
-          { duration: 10000 }
-        );
-      }
-    } else if (moneyGained > 0) {
-      // Only gained money
-      toast.success(
-        `💰 Gained ${moneyGainedFormatted} from selling ${itemsSold.length} item(s)!`,
-        { duration: 10000 }
-      );
-    } else if (moneyLost > 0) {
-      // Only lost money
-      toast.error(
-        `💸 Lost ${moneyLostFormatted} worth of items! No payment received.`,
-        { duration: 10000 }
-      );
-    } else {
-      // No items selected (shouldn't happen, but handle edge case)
-      toast.error("No items were processed.", { duration: 10000 });
-    }
+      const marketPriceFormatted = marketPrice.toLocaleString("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 0,
+      });
+      
+    });
   };
 
   const handleSelectAll = () => {
@@ -926,14 +940,421 @@ export default function MyInventoryPage() {
     }
   };
 
+  // Generate price history for the last 10 days for a given item
+  const generatePriceHistory = (item, days = 10) => {
+    if (!item) return [];
+    
+    const basePrice = item.basePrice || parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
+    if (!basePrice || basePrice <= 0) return [];
+    
+    const history = [];
+    const startDay = Math.max(1, currentDay - days + 1);
+    
+    for (let day = startDay; day <= currentDay; day++) {
+      const price = calculateDailyPrice(basePrice, day, item.id, item.name);
+      history.push({ day, price });
+    }
+    
+    return history;
+  };
+
+  // Simple line chart component for price history
+  const PriceHistoryChart = ({ data, itemName }) => {
+    if (!data || data.length === 0) {
+      return (
+        <div style={{ 
+          padding: "20px", 
+          textAlign: "center", 
+          color: "color-mix(in oklab, var(--foreground) 50%, transparent)",
+          fontSize: "13px"
+        }}>
+          No price history available
+        </div>
+      );
+    }
+
+    const width = 300;
+    const height = 150;
+    const padding = { top: 10, right: 10, bottom: 30, left: 25 };
+    const chartWidth = width - padding.left - padding.right;
+    const chartHeight = height - padding.top - padding.bottom;
+
+    const prices = data.map(d => d.price);
+    const rawMinPrice = Math.min(...prices);
+    const rawMaxPrice = Math.max(...prices);
+    const rawPriceRange = rawMaxPrice - rawMinPrice || 1;
+    
+    // Add padding (15% on each side) to give the graph breathing room
+    const paddingPercent = 0.15;
+    const paddingAmount = rawPriceRange * paddingPercent;
+    const minPrice = rawMinPrice - paddingAmount;
+    const maxPrice = rawMaxPrice + paddingAmount;
+    const priceRange = maxPrice - minPrice || 1; // Avoid division by zero
+
+    // Normalize prices to chart coordinates
+    const points = data.map((d, index) => {
+      const x = padding.left + (index / (data.length - 1 || 1)) * chartWidth;
+      const y = padding.top + chartHeight - ((d.price - minPrice) / priceRange) * chartHeight;
+      return { x, y, day: d.day, price: d.price };
+    });
+
+    // Create smooth curve path using cubic Bézier curves
+    const createSmoothPath = (points) => {
+      if (points.length === 0) return '';
+      if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+      if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+      
+      let path = `M ${points[0].x} ${points[0].y}`;
+      
+      // Use cubic Bézier curves for smooth interpolation
+      for (let i = 0; i < points.length - 1; i++) {
+        const p0 = points[Math.max(0, i - 1)];
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const p3 = points[Math.min(points.length - 1, i + 2)];
+        
+        // Calculate control points for smooth curve
+        const tension = 0.3; // Controls curve smoothness (0 = straight, 1 = very curved)
+        const cp1x = p1.x + (p2.x - p0.x) * tension;
+        const cp1y = p1.y + (p2.y - p0.y) * tension;
+        const cp2x = p2.x - (p3.x - p1.x) * tension;
+        const cp2y = p2.y - (p3.y - p1.y) * tension;
+        
+        // Use smooth curve for all segments except the last one
+        if (i < points.length - 2) {
+          path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+        } else {
+          // Last segment: ensure it ends at the last point
+          path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+        }
+      }
+      
+      return path;
+    };
+
+    const pathData = createSmoothPath(points);
+
+    // Create area path (for gradient fill) - need to follow the smooth curve
+    const areaPath = `${pathData} L ${points[points.length - 1].x} ${padding.top + chartHeight} L ${points[0].x} ${padding.top + chartHeight} Z`;
+
+    // Generate nice, evenly spaced price values for grid lines
+    // Ensures between 4 and 6 ticks
+    const generateNiceTicks = (min, max) => {
+      const range = max - min;
+      if (range === 0) return [min];
+      
+      // Try different target counts to get between 4-6 ticks
+      const targetCounts = [5, 6, 4]; // Prefer 5, then 6, then 4
+      
+      for (const targetCount of targetCounts) {
+        const roughStep = range / (targetCount - 1);
+        
+        // Calculate a nice round step size
+        const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
+        const normalizedStep = roughStep / magnitude;
+        let niceStep;
+        
+        if (normalizedStep <= 1) niceStep = 1 * magnitude;
+        else if (normalizedStep <= 2) niceStep = 2 * magnitude;
+        else if (normalizedStep <= 5) niceStep = 5 * magnitude;
+        else niceStep = 10 * magnitude;
+        
+        // Round min and max to nice values
+        const niceMin = Math.floor(min / niceStep) * niceStep;
+        const niceMax = Math.ceil(max / niceStep) * niceStep;
+        
+        // Generate ticks
+        const ticks = [];
+        for (let value = niceMin; value <= niceMax + niceStep * 0.001; value += niceStep) {
+          ticks.push(value);
+        }
+        
+        // Check if we have between 4 and 6 ticks
+        if (ticks.length >= 4 && ticks.length <= 6) {
+          return ticks;
+        }
+      }
+      
+      // Fallback: if we couldn't get 4-6, return the last attempt
+      const roughStep = range / 4;
+      const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
+      const normalizedStep = roughStep / magnitude;
+      let niceStep;
+      
+      if (normalizedStep <= 1) niceStep = 1 * magnitude;
+      else if (normalizedStep <= 2) niceStep = 2 * magnitude;
+      else if (normalizedStep <= 5) niceStep = 5 * magnitude;
+      else niceStep = 10 * magnitude;
+      
+      const niceMin = Math.floor(min / niceStep) * niceStep;
+      const niceMax = Math.ceil(max / niceStep) * niceStep;
+      
+      const ticks = [];
+      for (let value = niceMin; value <= niceMax + niceStep * 0.001; value += niceStep) {
+        ticks.push(value);
+      }
+      
+      return ticks;
+    };
+
+    const gridTicks = generateNiceTicks(minPrice, maxPrice);
+
+    return (
+      <div style={{ marginTop: "16px" }}>
+        <div style={{ 
+          fontSize: "12px", 
+          fontWeight: "600", 
+          marginBottom: "8px", 
+          textTransform: "uppercase", 
+          letterSpacing: "0.05em", 
+          color: "color-mix(in oklab, var(--foreground) 50%, transparent)" 
+        }}>
+          Price History (Last 10 Days)
+        </div>
+        <div style={{ fontSize: "14px", fontWeight: "600", marginBottom: "12px", color: "var(--foreground)" }}>
+          {itemName}
+        </div>
+        <svg width={width} height={height} style={{ display: "block" }}>
+          <defs>
+            <linearGradient id={`priceGradient-${itemName.replace(/\s+/g, '-')}`} x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#4a90e2" stopOpacity="0.3" />
+              <stop offset="100%" stopColor="#4a90e2" stopOpacity="0.05" />
+            </linearGradient>
+          </defs>
+          
+          {/* Grid lines */}
+          {(() => {
+            const displayedLabels = new Set();
+            return gridTicks.map((price) => {
+              // Only show grid lines that are within the visible range (with padding)
+              if (price < minPrice || price > maxPrice) return null;
+              
+              const y = padding.top + chartHeight - ((price - minPrice) / priceRange) * chartHeight;
+              const roundedPrice = Math.round(price);
+              const formattedPrice = formatPrice(roundedPrice);
+              
+              // Skip if we've already displayed this rounded price value
+              if (displayedLabels.has(roundedPrice)) {
+                return (
+                  <g key={price}>
+                    <line
+                      x1={padding.left}
+                      y1={y}
+                      x2={width - padding.right}
+                      y2={y}
+                      stroke="rgba(128, 128, 128, 0.15)"
+                      strokeWidth="1"
+                    />
+                  </g>
+                );
+              }
+              
+              displayedLabels.add(roundedPrice);
+              return (
+                <g key={price}>
+                  <line
+                    x1={padding.left}
+                    y1={y}
+                    x2={width - padding.right}
+                    y2={y}
+                    stroke="rgba(128, 128, 128, 0.15)"
+                    strokeWidth="1"
+                  />
+                  <text
+                    x={padding.left - 8}
+                    y={y + 4}
+                    textAnchor="end"
+                    fontSize="10"
+                    fill="rgba(128, 128, 128, 0.6)"
+                  >
+                    {formattedPrice}
+                  </text>
+                </g>
+              );
+            });
+          })()}
+
+          {/* Area fill */}
+          <path
+            d={areaPath}
+            fill={`url(#priceGradient-${itemName.replace(/\s+/g, '-')})`}
+          />
+
+          {/* Line */}
+          <path
+            d={pathData}
+            fill="none"
+            stroke="#4a90e2"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+
+          {/* Data points */}
+          {points.map((point, index) => (
+            <g key={index}>
+              <circle
+                cx={point.x}
+                cy={point.y}
+                r="3"
+                fill="#4a90e2"
+                stroke="var(--background)"
+                strokeWidth="2"
+              />
+              {/* Day labels */}
+              {index % Math.ceil(data.length / 5) === 0 || index === data.length - 1 ? (
+                <text
+                  x={point.x}
+                  y={height - padding.bottom + 12}
+                  textAnchor="middle"
+                  fontSize="10"
+                  fill="rgba(128, 128, 128, 0.7)"
+                >
+                  {point.day}
+                </text>
+              ) : null}
+            </g>
+          ))}
+          
+          {/* Days label */}
+          <text
+            x={width / 2}
+            y={height - padding.bottom + 25}
+            textAnchor="middle"
+            fontSize="10"
+            fill="rgba(128, 128, 128, 0.7)"
+            fontWeight="500"
+          >
+            Days
+          </text>
+        </svg>
+      </div>
+    );
+  };
+
   return (
-    <section className="page">
+    <section className="page inventory-page">
       <h1 className="page-title">My Inventory</h1>
       <p className="page-subtitle">
         {inventoryItems.length === 0
           ? "Your inventory is empty. Select items from listings to add them here."
           : `You have ${inventoryItems.length} item${inventoryItems.length === 1 ? "" : "s"} in your inventory.`}
       </p>
+
+      {/* Sales History Icons */}
+      {salesHistory.length > 0 && (() => {
+        // Filter out invalid entries and ensure all have required properties
+        const validSales = salesHistory.filter(sale => 
+          sale && 
+          typeof sale.profit === 'number' && 
+          typeof sale.amount === 'number' && 
+          !isNaN(sale.profit) && 
+          !isNaN(sale.amount)
+        );
+        
+        if (validSales.length === 0) return null;
+        
+        // Show only the last N transactions (most recent)
+        const recentSales = validSales.slice(-SALES_CAROUSEL_VISIBLE_ICONS);
+        const iconGap = 8;
+        
+        return (
+          <div 
+            style={{
+              marginTop: "1rem",
+              marginBottom: "1rem",
+              width: "100%",
+              maxWidth: "100%",
+              position: "relative",
+              overflowX: "auto",
+            }}
+          >
+            <div 
+              style={{
+                display: "flex",
+                gap: `${iconGap}px`,
+                alignItems: "flex-end",
+                width: "max-content",
+                position: "relative",
+              }}
+            >
+              {recentSales.map((sale, index) => {
+                const isProfit = sale.profit >= 0;
+                
+                // Ensure amount is a valid number
+                const amount = typeof sale.amount === 'number' && !isNaN(sale.amount) && sale.amount >= 0 ? sale.amount : 0;
+                const isZeroAmount = amount === 0 || sale.profit === 0;
+                
+                // Calculate opacity gradient from right (1.0) to left (0.3)
+                const totalItems = recentSales.length;
+                const progress = index / (totalItems - 1 || 1); // 0 (left) to 1 (right)
+                const opacity = 0.3 + (progress * 0.7); // Fade from 0.3 (left) to 1.0 (right)
+                
+                const isNewTransaction = sale.timestamp && newTransactionIds.has(sale.timestamp);
+                
+                // Determine colors based on amount
+                const borderColor = isZeroAmount ? "#6b7280" : (isProfit ? "#22c55e" : "#ef4444");
+                const backgroundColor = isZeroAmount ? "rgba(107, 114, 128, 0.1)" : (isProfit ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)");
+                const boxShadowColor = isZeroAmount ? "rgba(107, 114, 128, 0.2)" : (isProfit ? "rgba(34, 197, 94, 0.2)" : "rgba(239, 68, 68, 0.2)");
+                const textColor = isZeroAmount ? "#6b7280" : (isProfit ? "#22c55e" : "#ef4444");
+                
+                return (
+                  <div
+                    key={`sale-${sale.timestamp || index}-${index}`}
+                    className={`amount-card amount-card-5 ${isNewTransaction ? 'transaction-new' : ''}`}
+                    style={{
+                      height: "auto",
+                      minHeight: "36px",
+                      minWidth: "fit-content",
+                      width: "auto",
+                      flexShrink: 0,
+                      flexDirection: "row",
+                      gap: "6px",
+                      padding: "4px 12px",
+                      borderColor: borderColor,
+                      background: backgroundColor,
+                      boxShadow: `0 2px 8px ${boxShadowColor}`,
+                      opacity: opacity,
+                      transition: "opacity 0.3s ease",
+                    }}
+                    title={`${isProfit ? "Profit" : "Loss"}: ${formatPrice(amount)}`}
+                  >
+                    {!isZeroAmount && (
+                      isProfit ? (
+                        <ChevronUp className="amount-card-icon" size={18} style={{ color: textColor, flexShrink: 0 }} />
+                      ) : (
+                        <ChevronDown className="amount-card-icon" size={18} style={{ color: textColor, flexShrink: 0 }} />
+                      )
+                    )}
+                    <div className="amount-card-value" style={{ 
+                      color: textColor,
+                      fontSize: "13px",
+                      fontWeight: "600",
+                      lineHeight: 1,
+                      whiteSpace: "nowrap",
+                    }}>
+                      {formatPrice(amount)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Gradient overlay for smooth fade */}
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                bottom: 0,
+                width: "100px",
+                background: `linear-gradient(to right, var(--background), transparent)`,
+                pointerEvents: "none",
+                zIndex: 1,
+              }}
+            />
+          </div>
+        );
+      })()}
 
       <div style={{
         display: "flex",
@@ -1054,16 +1475,25 @@ export default function MyInventoryPage() {
       </div>
 
       {inventoryItems.length > 0 && (
-        <div className="listings-display">
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "1rem",
-              gap: "1rem",
-            }}
-          >
+        <div className="listings-layout">
+          <div className="listings-container" style={{
+            border: "1px solid color-mix(in oklab, var(--foreground) 12%, transparent)",
+            borderRadius: "14px",
+            padding: "20px",
+            background: "color-mix(in oklab, var(--background) 96%, transparent)",
+            maxHeight: "calc(100vh - 200px)",
+            overflowY: "auto"
+          }}>
+            {/* Buttons section - above the line */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "1rem",
+                gap: "1rem",
+              }}
+            >
             <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "1rem" }}>
               {selectedItemIds.size > 0 && (
                 <p style={{ margin: 0, fontSize: "0.9rem", opacity: 0.8 }}>
@@ -1254,8 +1684,11 @@ export default function MyInventoryPage() {
                 Quick Sale
               </button>
             </div>
-          </div>
-          <div className="listings-display-grid">
+            </div>
+
+            {/* Inventory items grid - below the line */}
+            <div className="listings-display" style={{ marginTop: "20px" }}>
+              <div className="listings-display-grid">
             {itemsWithDailyPrices.map((item, index) => {
               const isSelected = selectedItemIds.has(item.id);
               const checkProgress = checkingItems.get(item.id);
@@ -1431,7 +1864,26 @@ export default function MyInventoryPage() {
               </article>
               );
             })}
+            </div>
           </div>
+          </div>
+
+          {/* Price Graph Panel */}
+          {selectedItemForGraph && (
+            <div className="inventory-sidebar" style={{
+              border: "1px solid color-mix(in oklab, var(--foreground) 12%, transparent)",
+              borderRadius: "14px",
+              padding: "20px",
+              background: "color-mix(in oklab, var(--background) 96%, transparent)",
+              position: "sticky",
+              top: "24px"
+            }}>
+              <PriceHistoryChart 
+                data={generatePriceHistory(selectedItemForGraph)} 
+                itemName={selectedItemForGraph.name}
+              />
+            </div>
+          )}
         </div>
       )}
     </section>

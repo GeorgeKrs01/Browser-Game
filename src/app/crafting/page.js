@@ -299,7 +299,7 @@ export default function CraftingPage() {
   };
 
   return (
-    <section className="page" style={{ maxWidth: "100%", width: "100%" }}>
+    <section className="page crafting-page">
       <h1 className="page-title">Crafting</h1>
       <p className="page-subtitle">
         Combine materials to create powerful items. Higher quality materials increase success rate.

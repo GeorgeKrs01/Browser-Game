@@ -849,7 +849,7 @@ export default function ListingsPage() {
 
       <div className="listings-layout">
         {/* Listings Container */}
-        <div style={{
+        <div className="listings-container" style={{
           border: "1px solid color-mix(in oklab, var(--foreground) 12%, transparent)",
           borderRadius: "14px",
           padding: "20px",
@@ -1373,7 +1373,7 @@ export default function ListingsPage() {
 
         {/* Price Graph Panel */}
         {selectedItemForGraph && (
-          <div style={{
+          <div className="listings-sidebar" style={{
             border: "1px solid color-mix(in oklab, var(--foreground) 12%, transparent)",
             borderRadius: "14px",
             padding: "20px",
