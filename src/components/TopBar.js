@@ -10,6 +10,7 @@ import toast from "react-hot-toast";
 const STORAGE_KEY_DAY = "game-day";
 const STORAGE_KEY_DAY_SPEED = "day-speed";
 const STORAGE_KEY_INVENTORY_ITEMS = "inventory-items";
+const STORAGE_KEY_LISTINGS_UI = "listings-ui-state";
 const MAX_BACKPACK_CAPACITY = 500; // Maximum number of items
 
 // Day speed presets in milliseconds
@@ -233,7 +234,14 @@ export function TopBar({ isSidebarHidden, onToggleSidebar }) {
               onClick={() => {
                 resetBalance();
                 resetLevelTo1();
-                toast.success("Balance reset to $2,000 and level reset to 1");
+                // Reset listings state
+                localStorage.removeItem(STORAGE_KEY_LISTINGS_UI);
+                // Dispatch storage event so listings page can react
+                window.dispatchEvent(new StorageEvent("storage", {
+                  key: STORAGE_KEY_LISTINGS_UI,
+                  newValue: null,
+                }));
+                toast.success("Balance reset to $2,000, level reset to 1, and listings reset");
               }}
               aria-label="Reset balance to $2,000"
               title="Reset balance to $2,000"

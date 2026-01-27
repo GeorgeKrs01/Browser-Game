@@ -299,7 +299,7 @@ export default function CraftingPage() {
   };
 
   return (
-    <section className="page">
+    <section className="page" style={{ maxWidth: "100%", width: "100%" }}>
       <h1 className="page-title">Crafting</h1>
       <p className="page-subtitle">
         Combine materials to create powerful items. Higher quality materials increase success rate.
@@ -307,15 +307,16 @@ export default function CraftingPage() {
 
       <div style={{ 
         display: "flex",
-        flexDirection: "column",
+        flexDirection: "row",
         gap: "2rem",
-        marginTop: "2rem"
+        marginTop: "2rem",
+        alignItems: "flex-start"
       }}>
         {/* Recipes Panel */}
-        <div>
+        <div style={{ flex: "1 1 60%" }}>
           <h2 style={{ marginBottom: "1rem", fontSize: "1.5rem" }}>Available Recipes</h2>
           
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem", width: "100%" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "1rem", width: "100%" }}>
             {sortedAvailableRecipes.map(recipe => {
               const canCraft = checkMaterialsAvailable(recipe);
               const isSelected = selectedRecipe?.id === recipe.id;
@@ -377,7 +378,7 @@ export default function CraftingPage() {
               <h3 style={{ marginBottom: "1rem", fontSize: "1.2rem", opacity: 0.7 }}>
                 Locked Recipes
               </h3>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.5rem" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.5rem" }}>
                 {lockedRecipes.map(recipe => (
                   <div
                     key={recipe.id}
@@ -404,9 +405,15 @@ export default function CraftingPage() {
         </div>
 
         {/* Crafting Panel */}
-        <div>
+        <div style={{ flex: "1 1 40%", position: "sticky", top: "2rem" }}>
           {selectedRecipe ? (
-            <div>
+            <div style={{
+              padding: "1.5rem",
+              backgroundColor: "#1a1a1a",
+              borderRadius: "12px",
+              border: "1px solid #333",
+              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)"
+            }}>
               <h2 style={{ marginBottom: "1rem", fontSize: "1.5rem" }}>
                 Craft: {selectedRecipe.name}
               </h2>
@@ -568,18 +575,6 @@ export default function CraftingPage() {
               Select a recipe to begin crafting
             </div>
           )}
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div style={{ 
-        marginTop: "2rem", 
-        padding: "1rem",
-        backgroundColor: "#1a1a1a",
-        borderRadius: "8px"
-      }}>
-        <div style={{ fontSize: "0.9em" }}>
-          <strong>Crafting Stats:</strong> {craftingStats.itemsCrafted || 0} items crafted
         </div>
       </div>
     </section>

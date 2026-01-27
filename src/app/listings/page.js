@@ -283,6 +283,48 @@ export default function ListingsPage() {
     }
   }, []);
 
+  // Listen for reset events and reset listings state
+  useEffect(() => {
+    if (!isHydrated) return;
+
+    const handleStorageChange = (e) => {
+      if (e.key === STORAGE_KEY_LISTINGS_UI && e.newValue === null) {
+        // Reset all listings state
+        setRemovedCardIds(new Set());
+        setRemovedCards([]);
+        setExtraListingRows([]);
+        setSelectedItemForGraph(null);
+        // Reset nextDynamicId to initial value
+        const all = [...listings, ...additionalListings];
+        const maxId = all.reduce((max, item) => Math.max(max, item.id), 0);
+        setNextDynamicId(maxId + 1);
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    
+    // Also check periodically for same-tab updates
+    const interval = setInterval(() => {
+      const saved = localStorage.getItem(STORAGE_KEY_LISTINGS_UI);
+      if (!saved && (removedCardIds.size > 0 || removedCards.length > 0 || extraListingRows.length > 0)) {
+        // Reset all listings state
+        setRemovedCardIds(new Set());
+        setRemovedCards([]);
+        setExtraListingRows([]);
+        setSelectedItemForGraph(null);
+        // Reset nextDynamicId to initial value
+        const all = [...listings, ...additionalListings];
+        const maxId = all.reduce((max, item) => Math.max(max, item.id), 0);
+        setNextDynamicId(maxId + 1);
+      }
+    }, 1000);
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      clearInterval(interval);
+    };
+  }, [isHydrated, listings, additionalListings, removedCardIds, removedCards, extraListingRows]);
+
   // Persist UI state (card size + extra rows + selected listings) whenever it changes
   useEffect(() => {
     if (!isHydrated) return;
